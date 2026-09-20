@@ -55,12 +55,16 @@ def load_data():
     return df
 
 
-def run_pipeline(df, sku, test_weeks, constraints):
+@st.cache_data(show_spinner=False, max_entries=64)
+def forecast_sku(df_sku, sku, test_weeks):
+    """Fit and rank the forecasting models for one SKU (the slow step, ~7-10 s).
+
+    Cached on (data, sku, test_weeks): moving a constraint slider or going back to an
+    already-computed SKU does not refit the models.
+    """
     fc_pipe = ForecastingPipeline(test_weeks=test_weeks, deviation_threshold_pct=20.0)
-    sku_col = "sku" if "sku" in df.columns else None
-    if sku_col:
-        df = df[df["sku"] == sku]  # fit only the selected SKU, not every series in the file
-    fc_all = fc_pipe.run(df, sku_col=sku_col)
+    sku_col = "sku" if "sku" in df_sku.columns else None
+    fc_all = fc_pipe.run(df_sku, sku_col=sku_col)
     best = fc_pipe.best_model(fc_all)
     if sku not in best:
         raise ValueError(
@@ -68,7 +72,13 @@ def run_pipeline(df, sku, test_weeks, constraints):
             f"(need more than {test_weeks}) or every model failed. "
             "Pick another SKU or reduce the test horizon."
         )
-    fc = best[sku]
+    return best[sku]
+
+
+def run_pipeline(df, sku, test_weeks, constraints):
+    if "sku" in df.columns:
+        df = df[df["sku"] == sku]  # only the selected SKU, not every series in the file
+    fc = forecast_sku(df, sku, test_weeks)
 
     opt_pipe = OptimizationPipeline(constraints=constraints, integer=True)
     alloc = opt_pipe.run(fc.test_dates, fc.forecast, sku=sku)
