@@ -1,0 +1,30 @@
+# Environment variables — never commit API keys
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Raw datasets: personal data (DataCo), size, and third-party licences.
+# Only the small anonymised samples in data/ are versioned.
+DataCoSupplyChainDataset.csv
+train.csv
+Sales_Transactions_Dataset_Weekly.csv
+data/ingested_demand_data.csv
+
+# Outputs (large generated files)
+output/
+
+# Local tooling
+.claude/
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PRD
+PRD-AI-Supply-Chain-Copilot.md
