@@ -5,9 +5,15 @@ Run with:
     py -m streamlit run dashboard.py
 """
 
+import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Cap numeric-library threads before numpy is imported: on a shared host every core a
+# model fit grabs counts against the app's CPU budget (Streamlit Cloud throttles heavy apps).
+for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, "2")
 
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent))
@@ -31,6 +37,7 @@ st.set_page_config(
 # ── Imports ───────────────────────────────────────────────────────────
 from src.forecasting.data_generator import generate_demand_dataset
 from src.forecasting.pipeline import ForecastingPipeline
+from src.forecasting.models import MovingAverage, ExponentialSmoothing, SARIMAModel
 from src.optimization.constraints import WorkforceConstraints
 from src.optimization.pipeline import OptimizationPipeline
 from src.analysis.deviation import build_deviation_report
@@ -56,13 +63,17 @@ def load_data():
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
-def forecast_sku(df_sku, sku, test_weeks):
+def forecast_sku(df_sku, sku, test_weeks, use_sarima=False):
     """Fit and rank the forecasting models for one SKU (the slow step, ~7-10 s).
 
-    Cached on (data, sku, test_weeks): moving a constraint slider or going back to an
-    already-computed SKU does not refit the models.
+    Cached on (data, sku, test_weeks, use_sarima): moving a constraint slider or going back
+    to an already-computed SKU does not refit the models. SARIMA is by far the most
+    expensive model (~8 s and ~14 CPU-s per SKU), so it is opt-in (see SARIMA_ENABLED).
     """
-    fc_pipe = ForecastingPipeline(test_weeks=test_weeks, deviation_threshold_pct=20.0)
+    models = [MovingAverage(window=12), ExponentialSmoothing(seasonal_periods=52)]
+    if use_sarima:
+        models.append(SARIMAModel(order=(1, 1, 1), seasonal_order=(1, 1, 1, 52)))
+    fc_pipe = ForecastingPipeline(test_weeks=test_weeks, deviation_threshold_pct=20.0, models=models)
     sku_col = "sku" if "sku" in df_sku.columns else None
     fc_all = fc_pipe.run(df_sku, sku_col=sku_col)
     best = fc_pipe.best_model(fc_all)
@@ -75,10 +86,10 @@ def forecast_sku(df_sku, sku, test_weeks):
     return best[sku]
 
 
-def run_pipeline(df, sku, test_weeks, constraints):
+def run_pipeline(df, sku, test_weeks, constraints, use_sarima=False):
     if "sku" in df.columns:
         df = df[df["sku"] == sku]  # only the selected SKU, not every series in the file
-    fc = forecast_sku(df, sku, test_weeks)
+    fc = forecast_sku(df, sku, test_weeks, use_sarima)
 
     opt_pipe = OptimizationPipeline(constraints=constraints, integer=True)
     alloc = opt_pipe.run(fc.test_dates, fc.forecast, sku=sku)
@@ -90,6 +101,11 @@ def run_pipeline(df, sku, test_weeks, constraints):
 
     context = build_context(fc, alloc, dev, sensitivity)
     return fc, alloc, dev, sensitivity, context
+
+
+# SARIMA is only offered when explicitly enabled (ENABLE_SARIMA=1 in .env). A public
+# deployment leaves it off so a visitor cannot trigger the heavy computation.
+SARIMA_ENABLED = os.environ.get("ENABLE_SARIMA", "").strip().lower() in ("1", "true", "yes")
 
 
 def metric_card(col, label, value, delta=None, delta_color="normal"):
@@ -203,6 +219,13 @@ with st.sidebar:
             st.dataframe(df_active.head(), use_container_width=True, hide_index=True)
 
     test_weeks = st.slider("Test horizon (weeks)", 4, 26, 13)
+    use_sarima = False
+    if SARIMA_ENABLED:
+        use_sarima = st.checkbox(
+            "Include SARIMA model (slower)", value=False,
+            help="Adds a third forecasting model. Accurate on strongly seasonal data, but it "
+                 "takes several seconds per SKU and a lot of CPU.",
+        )
 
     st.divider()
     st.subheader("Workforce Constraints")
@@ -242,12 +265,12 @@ with st.sidebar:
 #  Run pipeline (cached in session state)
 # ══════════════════════════════════════════════════════════════════════
 
-cache_key = f"{sku}_{test_weeks}_{capacity}_{cost_pw}_{max_w}_{budget}_{min_sl}_{ramp}_{st.session_state.get('map_key','demo')}"
+cache_key = f"{sku}_{test_weeks}_{use_sarima}_{capacity}_{cost_pw}_{max_w}_{budget}_{min_sl}_{ramp}_{st.session_state.get('map_key','demo')}"
 
 if run_btn or "results" not in st.session_state or st.session_state.get("cache_key") != cache_key:
     with st.spinner("Running pipeline…"):
         try:
-            fc, alloc, dev, sensitivity, context = run_pipeline(df_active, sku, test_weeks, constraints)
+            fc, alloc, dev, sensitivity, context = run_pipeline(df_active, sku, test_weeks, constraints, use_sarima)
         except ValueError as e:
             st.error(str(e))
             st.stop()

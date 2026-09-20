@@ -19,7 +19,7 @@ Operations teams have to answer two questions before every busy season: *how muc
 ## What it does
 
 1. **Loads almost any sales file.** Upload a CSV or Excel export and the app works out which column is the date, the demand and the product — using rules first, and Claude (Haiku) when an API key is available. It also handles messy exports: different encodings, one-row-per-product layouts, order-level data (summed to weekly), and it drops personal data (emails, names, addresses) before anything else happens.
-2. **Forecasts demand.** Three models compete on a hold-out period; the most accurate one wins for each product.
+2. **Forecasts demand.** Two models compete on a hold-out period (moving average and Holt-Winters); a third, SARIMA, can be switched on for strongly seasonal data. The most accurate one wins for each product.
 3. **Plans the workforce.** An optimisation model finds the cheapest staffing plan that respects budget, headcount, ramp limits and a minimum service level. From the command line, constraints can also be written in plain language and parsed by Claude (`py run_optimization.py --llm`); in the dashboard they are set with sliders.
 4. **Stress-tests the plan.** It flags weeks where the forecast error leaves the plan short, and shows how cost and service level move if demand, budget or headcount change.
 5. **Explains it with AI.** Claude writes an executive summary, answers what-if questions (re-running the optimiser for real numbers) and invents edge-case scenarios that are then tested automatically.
@@ -28,7 +28,7 @@ Everything is available in an interactive Streamlit dashboard.
 
 ## Results
 
-All figures below come from the built-in **synthetic demo dataset** (3 SKUs, 104 weeks of weekly demand, last 13 weeks held out). Run `run_forecast.py`, `run_optimization.py` and `run_analysis.py` to reproduce them.
+All figures below come from the built-in **synthetic demo dataset** (3 SKUs, 104 weeks of weekly demand, last 13 weeks held out). Run `run_forecast.py`, `run_optimization.py` and `run_analysis.py` to reproduce them (the command-line scripts fit all three models, including SARIMA).
 
 **Forecast accuracy** (MAPE = average % error, lower is better):
 
@@ -70,7 +70,7 @@ cp .env.example .env        # optional: add your Anthropic API key to enable the
 py -m streamlit run dashboard.py
 ```
 
-The dashboard opens on the built-in demo dataset. To use your own data, choose **Upload my file** (CSV or Excel with a date column, a demand column and, optionally, a product column) and pick a product with plenty of history — the list is sorted by volume. Without an API key, forecasting and optimisation still work; only the AI features are disabled.
+The dashboard opens on the built-in demo dataset. To use your own data, choose **Upload my file** (CSV or Excel with a date column, a demand column and, optionally, a product column) and pick a product with plenty of history — the list is sorted by volume. Without an API key, forecasting and optimisation still work; only the AI features are disabled. SARIMA is heavy on CPU, so the dashboard hides it by default; to get a "Include SARIMA" checkbox when running locally, add `ENABLE_SARIMA=1` to your `.env`.
 
 ## How it is built
 
@@ -117,7 +117,7 @@ Avant chaque haute saison, les équipes opérations doivent répondre à deux qu
 ### Ce que fait le projet
 
 1. **Charge presque n'importe quel fichier de ventes.** Vous importez un CSV ou Excel et l'application identifie la colonne date, la demande et le produit — par règles d'abord, puis avec Claude (Haiku) si une clé d'API est disponible. Elle gère aussi les exports imparfaits : encodages différents, une ligne par produit, données par commande (sommées par semaine), et elle retire les données personnelles (emails, noms, adresses) avant tout traitement.
-2. **Prévoit la demande.** Trois modèles s'affrontent sur une période de test ; le plus précis est retenu pour chaque produit.
+2. **Prévoit la demande.** Deux modèles s'affrontent sur une période de test (moyenne mobile et Holt-Winters) ; un troisième, SARIMA, peut être activé pour les données très saisonnières. Le plus précis est retenu pour chaque produit.
 3. **Planifie les effectifs.** Un modèle d'optimisation trouve le plan le moins coûteux qui respecte le budget, le nombre maximal de personnes, les limites de variation hebdomadaire et un niveau de service minimal. En ligne de commande, les contraintes peuvent aussi être écrites en langage naturel et interprétées par Claude (`py run_optimization.py --llm`) ; dans le dashboard, elles se règlent avec des curseurs.
 4. **Teste la solidité du plan.** Il repère les semaines où l'erreur de prévision laisse le plan en manque, et montre comment le coût et le niveau de service évoluent si la demande, le budget ou les effectifs changent.
 5. **Explique avec l'IA.** Claude rédige une synthèse, répond aux questions « et si… » (en relançant l'optimisation pour donner de vrais chiffres) et imagine des scénarios limites qui sont ensuite testés automatiquement.
@@ -126,7 +126,7 @@ Le tout est accessible dans un tableau de bord Streamlit interactif.
 
 ### Résultats
 
-Tous les chiffres ci-dessous proviennent du **jeu de démonstration synthétique** intégré (3 SKU, 104 semaines de demande hebdomadaire, 13 dernières semaines mises de côté pour le test). Lancez `run_forecast.py`, `run_optimization.py` et `run_analysis.py` pour les reproduire.
+Tous les chiffres ci-dessous proviennent du **jeu de démonstration synthétique** intégré (3 SKU, 104 semaines de demande hebdomadaire, 13 dernières semaines mises de côté pour le test). Lancez `run_forecast.py`, `run_optimization.py` et `run_analysis.py` pour les reproduire (les scripts en ligne de commande ajustent les trois modèles, SARIMA compris).
 
 **Précision de la prévision** (MAPE = erreur moyenne en %, plus bas = mieux) :
 
@@ -168,7 +168,7 @@ cp .env.example .env        # optionnel : ajoutez votre clé d'API Anthropic pou
 py -m streamlit run dashboard.py
 ```
 
-Le dashboard s'ouvre sur le jeu de démonstration intégré. Pour utiliser vos données, choisissez **Upload my file** (CSV ou Excel avec une colonne date, une colonne demande et, en option, une colonne produit) puis sélectionnez un produit avec beaucoup d'historique — la liste est triée par volume. Sans clé d'API, la prévision et l'optimisation fonctionnent ; seules les fonctions IA sont désactivées.
+Le dashboard s'ouvre sur le jeu de démonstration intégré. Pour utiliser vos données, choisissez **Upload my file** (CSV ou Excel avec une colonne date, une colonne demande et, en option, une colonne produit) puis sélectionnez un produit avec beaucoup d'historique — la liste est triée par volume. Sans clé d'API, la prévision et l'optimisation fonctionnent ; seules les fonctions IA sont désactivées. SARIMA consomme beaucoup de processeur : le dashboard le masque par défaut ; pour obtenir la case « Include SARIMA » en local, ajoutez `ENABLE_SARIMA=1` à votre `.env`.
 
 ### Architecture
 
