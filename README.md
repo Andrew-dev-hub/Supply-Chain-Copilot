@@ -10,7 +10,7 @@
 
 ![Workforce optimisation tab of the dashboard](docs/images/optimisation.jpg)
 
-<sub>Interactive dashboard (demo dataset): optimised staffing plan versus flat and reactive baselines.</sub>
+<sub>Interactive dashboard (demo dataset, SKU-B): optimised staffing plan versus flat and reactive baselines — 90,900 EUR, 14,400 EUR below flat staffing, at 100 % service level.</sub>
 
 ## The problem
 
@@ -52,7 +52,7 @@ The seasonal models land close to the noise built into the data (about 4–6 % M
 
 | Demand forecast | Deviation & sensitivity |
 |---|---|
-| ![Forecast tab](docs/images/forecast.jpg) | ![Analysis tab](docs/images/analysis.jpg) |
+| ![Forecast tab: Holt-Winters on SKU-B, 5.2 % MAPE](docs/images/forecast.jpg) | ![Analysis tab: deviation report and sensitivity charts for SKU-B](docs/images/analysis.jpg) |
 
 ### AI insights
 
@@ -111,7 +111,7 @@ Each stage also runs on its own from the command line (`run_forecast.py`, `run_o
 
 ![Onglet d'optimisation des effectifs du dashboard](docs/images/optimisation.jpg)
 
-<sub>Dashboard interactif (jeu de démo) : plan d'effectifs optimisé face aux références « constant » et « réactif ».</sub>
+<sub>Dashboard interactif (jeu de démo, SKU-B) : plan d'effectifs optimisé face aux références « constant » et « réactif » — 90 900 EUR, soit 14 400 EUR de moins qu'un effectif constant, à 100 % de niveau de service.</sub>
 
 ### Le problème
 
@@ -153,7 +153,7 @@ Les modèles saisonniers s'approchent du bruit intégré aux données (environ 4
 
 | Prévision de la demande | Écarts & sensibilité |
 |---|---|
-| ![Onglet Forecast](docs/images/forecast.jpg) | ![Onglet Analysis](docs/images/analysis.jpg) |
+| ![Onglet Forecast : Holt-Winters sur SKU-B, MAPE de 5,2 %](docs/images/forecast.jpg) | ![Onglet Analysis : rapport d'écarts et analyses de sensibilité pour SKU-B](docs/images/analysis.jpg) |
 
 #### Analyses IA
 
