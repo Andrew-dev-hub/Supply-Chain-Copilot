@@ -6,7 +6,7 @@ import pandas as pd
 
 def generate_demand_dataset(
     start_date: str = "2023-01-02",
-    n_weeks: int = 104,
+    n_weeks: int = 156,
     n_skus: int = 3,
     seed: int = 42,
 ) -> pd.DataFrame:

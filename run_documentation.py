@@ -44,7 +44,7 @@ def main():
     if Path(DATA_PATH).exists():
         df = pd.read_csv(DATA_PATH, parse_dates=["date"])
     else:
-        df = generate_demand_dataset(n_weeks=104, n_skus=3)
+        df = generate_demand_dataset(n_weeks=156, n_skus=3)
         df.to_csv(DATA_PATH, index=False)
 
     print("Running pipeline to gather context...")

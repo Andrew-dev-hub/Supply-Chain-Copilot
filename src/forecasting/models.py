@@ -48,12 +48,14 @@ class ExponentialSmoothing:
         self.trend = trend
         self.seasonal = seasonal
         self._fitted = None
+        self.seasonal_fallback = False  # True when the last fit had < 2 seasonal cycles
 
     def fit(self, train: pd.Series) -> "ExponentialSmoothing":
         # Need at least 2 full seasonal cycles for additive seasonality
         sp = self.seasonal_periods
-        if len(train) < 2 * sp:
-            sp = None  # fall back to simple exponential smoothing
+        self.seasonal_fallback = len(train) < 2 * sp
+        if self.seasonal_fallback:
+            sp = None  # fall back to Holt's linear trend (no seasonality)
             seasonal = None
         else:
             seasonal = self.seasonal
@@ -76,6 +78,8 @@ class ExponentialSmoothing:
         return self._fitted.forecast(horizon).values
 
     def __repr__(self) -> str:
+        if self.seasonal_fallback:
+            return f"ExponentialSmoothing(no seasonality: needs {2 * self.seasonal_periods}+ training weeks)"
         return f"ExponentialSmoothing(seasonal_periods={self.seasonal_periods})"
 
 
@@ -90,11 +94,13 @@ class SARIMAModel:
         self.order = order
         self.seasonal_order = seasonal_order
         self._fitted = None
+        self.seasonal_fallback = False  # True when the last fit had < 2 seasonal cycles
 
     def fit(self, train: pd.Series) -> "SARIMAModel":
         # Use a simpler seasonal order if not enough data
         sp = self.seasonal_order[3]
-        if len(train) < 2 * sp:
+        self.seasonal_fallback = len(train) < 2 * sp
+        if self.seasonal_fallback:
             seasonal_order = (0, 0, 0, 0)
         else:
             seasonal_order = self.seasonal_order
@@ -118,4 +124,7 @@ class SARIMAModel:
         return np.maximum(forecast.values, 0)
 
     def __repr__(self) -> str:
+        if self.seasonal_fallback:
+            return (f"SARIMAModel(order={self.order}, no seasonality: "
+                    f"needs {2 * self.seasonal_order[3]}+ training weeks)")
         return f"SARIMAModel(order={self.order}, seasonal_order={self.seasonal_order})"

@@ -56,7 +56,7 @@ def load_data():
     path = "data/demand_data.csv"
     if Path(path).exists():
         return pd.read_csv(path, parse_dates=["date"])
-    df = generate_demand_dataset(n_weeks=104, n_skus=3)
+    df = generate_demand_dataset(n_weeks=156, n_skus=3)
     Path("data").mkdir(exist_ok=True)
     df.to_csv(path, index=False)
     return df
@@ -76,20 +76,34 @@ def forecast_sku(df_sku, sku, test_weeks, use_sarima=False):
     fc_pipe = ForecastingPipeline(test_weeks=test_weeks, deviation_threshold_pct=20.0, models=models)
     sku_col = "sku" if "sku" in df_sku.columns else None
     fc_all = fc_pipe.run(df_sku, sku_col=sku_col)
-    best = fc_pipe.best_model(fc_all)
-    if sku not in best:
+    valid = [r for r in fc_all.get(str(sku), []) if not np.isnan(r.mape)]
+    if not valid:
         raise ValueError(
             f"No forecast could be produced for '{sku}': the series has too few weeks "
             f"(need more than {test_weeks}) or every model failed. "
             "Pick another SKU or reduce the test horizon."
         )
-    return best[sku]
+    return valid
 
 
-def run_pipeline(df, sku, test_weeks, constraints, use_sarima=False):
+AUTO_MODEL = "Auto (lowest MAPE)"
+
+
+def pick_forecast(results, model_choice):
+    """Returns the forecast of the chosen model, or the lowest-MAPE one in Auto mode."""
+    if model_choice == AUTO_MODEL:
+        return min(results, key=lambda r: r.mape)
+    for r in results:
+        if r.model_name.startswith(model_choice):
+            return r
+    raise ValueError(f"Model '{model_choice}' failed on this SKU. Pick another model.")
+
+
+def run_pipeline(df, sku, test_weeks, constraints, use_sarima=False, model_choice=AUTO_MODEL):
     if "sku" in df.columns:
         df = df[df["sku"] == sku]  # only the selected SKU, not every series in the file
-    fc = forecast_sku(df, sku, test_weeks, use_sarima)
+    fc_results = forecast_sku(df, sku, test_weeks, use_sarima)
+    fc = pick_forecast(fc_results, model_choice)
 
     opt_pipe = OptimizationPipeline(constraints=constraints, integer=True)
     alloc = opt_pipe.run(fc.test_dates, fc.forecast, sku=sku)
@@ -100,7 +114,7 @@ def run_pipeline(df, sku, test_weeks, constraints, use_sarima=False):
     sensitivity = sa.run_all()
 
     context = build_context(fc, alloc, dev, sensitivity)
-    return fc, alloc, dev, sensitivity, context
+    return fc, fc_results, alloc, dev, sensitivity, context
 
 
 # SARIMA is only offered when explicitly enabled (ENABLE_SARIMA=1 in .env). A public
@@ -226,6 +240,12 @@ with st.sidebar:
             help="Adds a third forecasting model. Accurate on strongly seasonal data, but it "
                  "takes several seconds per SKU and a lot of CPU.",
         )
+    model_options = [AUTO_MODEL, "MovingAverage", "ExponentialSmoothing"] + (["SARIMA"] if use_sarima else [])
+    model_choice = st.selectbox(
+        "Forecast model", model_options,
+        help="Auto keeps the model with the lowest MAPE on the test horizon. "
+             "Pick one explicitly to compare it or to drive the optimisation with it.",
+    )
 
     st.divider()
     st.subheader("Workforce Constraints")
@@ -265,19 +285,21 @@ with st.sidebar:
 #  Run pipeline (cached in session state)
 # ══════════════════════════════════════════════════════════════════════
 
-cache_key = f"{sku}_{test_weeks}_{use_sarima}_{capacity}_{cost_pw}_{max_w}_{budget}_{min_sl}_{ramp}_{st.session_state.get('map_key','demo')}"
+cache_key = f"{sku}_{test_weeks}_{use_sarima}_{model_choice}_{capacity}_{cost_pw}_{max_w}_{budget}_{min_sl}_{ramp}_{st.session_state.get('map_key','demo')}"
 
 if run_btn or "results" not in st.session_state or st.session_state.get("cache_key") != cache_key:
     with st.spinner("Running pipeline…"):
         try:
-            fc, alloc, dev, sensitivity, context = run_pipeline(df_active, sku, test_weeks, constraints, use_sarima)
+            fc, fc_results, alloc, dev, sensitivity, context = run_pipeline(
+                df_active, sku, test_weeks, constraints, use_sarima, model_choice
+            )
         except ValueError as e:
             st.error(str(e))
             st.stop()
-    st.session_state["results"] = (fc, alloc, dev, sensitivity, context)
+    st.session_state["results"] = (fc, fc_results, alloc, dev, sensitivity, context)
     st.session_state["cache_key"] = cache_key
 
-fc, alloc, dev, sensitivity, context = st.session_state["results"]
+fc, fc_results, alloc, dev, sensitivity, context = st.session_state["results"]
 
 # ══════════════════════════════════════════════════════════════════════
 #  Tabs
@@ -298,6 +320,15 @@ with tab1:
     metric_card(c2, "MAPE", f"{fc.mape:.2f}%")
     metric_card(c3, "MAE", f"{fc.mae:.1f} units")
     metric_card(c4, "Significant deviations", str(len(fc.deviations)))
+    st.caption("MAPE by model on the test horizon: " + " · ".join(
+        f"{r.model_name.split('(')[0]} {r.mape:.2f}%" for r in sorted(fc_results, key=lambda r: r.mape)
+    ))
+    if "no seasonality" in fc.model_name:
+        st.warning(
+            "Yearly seasonality is switched off for this model: it needs at least two full years "
+            "of training history (104 weeks after the test horizon). The forecast follows the "
+            "trend only and will miss seasonal peaks."
+        )
 
     st.divider()
 
