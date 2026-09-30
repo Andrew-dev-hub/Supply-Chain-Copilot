@@ -542,16 +542,17 @@ with tab3:
         line=dict(color="#2e7d32", width=2), mode="lines",
     ), row=1, col=1)
 
+    # One red block per short week, from plan capacity up to actual demand. A filled area
+    # between the gap points would join non-adjacent weeks and paint gaps that do not exist.
     gap_mask = df_dev["plan_gap"] > 0
     if gap_mask.any():
-        gap_dates = dates_dev[gap_mask]
-        fig.add_traces([
-            go.Scatter(x=gap_dates, y=df_dev["actual"][gap_mask],
-                       fill=None, mode="lines", line_color="rgba(0,0,0,0)", showlegend=False),
-            go.Scatter(x=gap_dates, y=df_dev["plan_capacity"][gap_mask],
-                       fill="tonexty", mode="lines", fillcolor="rgba(229,57,53,0.25)",
-                       line_color="rgba(0,0,0,0)", name="Coverage gap"),
-        ], rows=[1, 1], cols=[1, 1])
+        fig.add_trace(go.Bar(
+            x=dates_dev[gap_mask], y=df_dev["plan_gap"][gap_mask],
+            base=df_dev["plan_capacity"][gap_mask],
+            width=3 * 24 * 3600 * 1000, marker_color="rgba(229,57,53,0.35)",
+            marker_line=dict(color="#e53935", width=1), name="Coverage gap",
+            hovertemplate="Short by %{y:.0f} units<extra></extra>",
+        ), row=1, col=1)
 
     # Same scaling as the Forecast tab error chart: fit the actual errors, keep ±20% in view.
     dev_err = df_dev["forecast_error_pct"].to_numpy(dtype=float)
@@ -579,6 +580,8 @@ with tab3:
     fig.update_yaxes(title_text="Units", row=1, col=1)
     fig.update_yaxes(title_text="Forecast error (%)", row=2, col=1,
                      range=[-dev_lim, dev_lim], ticksuffix="%")
+    # Bars make Plotly pad the date axis well past the last week; pin it to the test period
+    fig.update_xaxes(range=[dates_dev.min() - pd.Timedelta(days=5), dates_dev.max() + pd.Timedelta(days=5)])
     st.plotly_chart(fig, use_container_width=True)
 
     # Sensitivity
