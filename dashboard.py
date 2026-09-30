@@ -364,7 +364,9 @@ with tab1:
             marker=dict(color="orange", size=10, symbol="circle-open", line=dict(width=2)),
         ))
     fig.update_layout(
-        height=400, legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        title=dict(text="Demand history and forecast vs actual on the test period", y=0.97),
+        margin=dict(t=90),
+        height=430, legend=dict(orientation="h", yanchor="bottom", y=1.02),
         xaxis_title="Date", yaxis_title="Demand (units)",
         hovermode="x unified",
     )
@@ -376,17 +378,27 @@ with tab1:
         (fc.forecast - fc.actual) / fc.actual * 100,
         np.nan,
     )
+    # Scale the y-axis to the actual errors (keeping the ±20% threshold just in view)
+    # so that small errors stay readable instead of being crushed by a fixed ±50% range.
+    max_abs_err = float(np.nanmax(np.abs(pct_err))) if np.isfinite(pct_err).any() else 0.0
+    err_lim = max(max_abs_err * 1.25, 22)
     fig2 = go.Figure()
+    fig2.add_hrect(y0=-20, y1=20, fillcolor="#43a047", opacity=0.07, line_width=0)
     fig2.add_bar(
         x=fc.test_dates, y=pct_err,
         marker_color=["#e53935" if abs(e) > 20 else "#1565c0" for e in pct_err],
+        text=[f"{e:+.1f}%" if np.isfinite(e) else "" for e in pct_err],
+        textposition="outside", cliponaxis=False,
         name="% Error",
     )
-    fig2.add_hline(y=20, line_dash="dot", line_color="orange")
-    fig2.add_hline(y=-20, line_dash="dot", line_color="orange")
+    fig2.add_hline(y=20, line_dash="dot", line_color="orange",
+                   annotation_text="+20% alert", annotation_position="top left")
+    fig2.add_hline(y=-20, line_dash="dot", line_color="orange",
+                   annotation_text="-20% alert", annotation_position="bottom left")
     fig2.add_hline(y=0, line_color="black", line_width=1)
     fig2.update_layout(
-        height=220, yaxis=dict(title="Forecast error (%)", range=[-50, 50]),
+        title="Weekly forecast error (above 0 = over-forecast, below 0 = under-forecast)",
+        height=340, yaxis=dict(title="Forecast error (%)", range=[-err_lim, err_lim], ticksuffix="%"),
         showlegend=False, hovermode="x unified",
     )
     st.plotly_chart(fig2, use_container_width=True)
@@ -421,7 +433,9 @@ with tab2:
 
     # Allocation vs demand
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.6, 0.4], vertical_spacing=0.06)
+                        row_heights=[0.6, 0.4], vertical_spacing=0.1,
+                        subplot_titles=("Forecasted demand vs demand covered by the plan",
+                                        "Workers per week: optimised plan vs baselines"))
 
     fig.add_trace(go.Scatter(
         x=alloc.periods, y=alloc.demand,
@@ -461,8 +475,9 @@ with tab2:
                   annotation_text=f"Max workers ({max_w})", row=2, col=1)
 
     fig.update_layout(
-        height=520, barmode="overlay", hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=560, barmode="overlay", hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.06),
+        margin=dict(t=90),
     )
     fig.update_yaxes(title_text="Units", row=1, col=1)
     fig.update_yaxes(title_text="Workers", row=2, col=1)
@@ -480,7 +495,8 @@ with tab2:
     fig3.add_hline(y=budget / 1000, line_dash="dashdot", line_color="red",
                    annotation_text=f"Budget ({budget/1000:.0f}k EUR)")
     fig3.update_layout(
-        height=300, yaxis_title="Total cost (k EUR)",
+        title="Total cost over the horizon: optimised plan vs baselines",
+        height=320, yaxis_title="Total cost (k EUR)",
         showlegend=False, yaxis=dict(range=[0, max(cost_values) / 1000 * 1.3]),
     )
     st.plotly_chart(fig3, use_container_width=True)
@@ -508,7 +524,9 @@ with tab3:
     dates_dev = pd.to_datetime(df_dev["date"])
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.65, 0.35], vertical_spacing=0.06)
+                        row_heights=[0.6, 0.4], vertical_spacing=0.1,
+                        subplot_titles=("Actual demand vs plan capacity (red area = capacity shortfall)",
+                                        "Weekly forecast error (red bar = week where the plan fell short)"))
 
     fig.add_trace(go.Scatter(
         x=dates_dev, y=df_dev["actual"], name="Actual",
@@ -534,20 +552,32 @@ with tab3:
                        line_color="rgba(0,0,0,0)", name="Coverage gap"),
         ], rows=[1, 1], cols=[1, 1])
 
+    # Same scaling as the Forecast tab error chart: fit the actual errors, keep ±20% in view.
+    dev_err = df_dev["forecast_error_pct"].to_numpy(dtype=float)
+    dev_max_abs = float(np.nanmax(np.abs(dev_err))) if np.isfinite(dev_err).any() else 0.0
+    dev_lim = max(dev_max_abs * 1.25, 22)
+    fig.add_hrect(y0=-20, y1=20, fillcolor="#43a047", opacity=0.07, line_width=0, row=2, col=1)
     bar_colors = ["#e53935" if g > 0 else "#1565c0" for g in df_dev["plan_gap"]]
     fig.add_trace(go.Bar(
-        x=dates_dev, y=df_dev["forecast_error_pct"],
+        x=dates_dev, y=dev_err,
         name="Forecast error (%)", marker_color=bar_colors, opacity=0.75,
+        text=[f"{e:+.1f}%" if np.isfinite(e) else "" for e in dev_err],
+        textposition="outside", cliponaxis=False,
     ), row=2, col=1)
-    fig.add_hline(y=20, line_dash="dot", line_color="orange", row=2, col=1)
-    fig.add_hline(y=-20, line_dash="dot", line_color="orange", row=2, col=1)
+    fig.add_hline(y=20, line_dash="dot", line_color="orange", row=2, col=1,
+                  annotation_text="+20% alert", annotation_position="top left")
+    fig.add_hline(y=-20, line_dash="dot", line_color="orange", row=2, col=1,
+                  annotation_text="-20% alert", annotation_position="bottom left")
+    fig.add_hline(y=0, line_color="black", line_width=1, row=2, col=1)
 
     fig.update_layout(
-        height=520, hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        height=600, hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.06),
+        margin=dict(t=90),
     )
     fig.update_yaxes(title_text="Units", row=1, col=1)
-    fig.update_yaxes(title_text="Forecast error (%)", row=2, col=1, range=[-55, 55])
+    fig.update_yaxes(title_text="Forecast error (%)", row=2, col=1,
+                     range=[-dev_lim, dev_lim], ticksuffix="%")
     st.plotly_chart(fig, use_container_width=True)
 
     # Sensitivity
