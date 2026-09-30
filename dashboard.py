@@ -490,14 +490,15 @@ with tab2:
         x=cost_labels, y=[v / 1000 for v in cost_values],
         marker_color=["#1565c0", "#90a4ae", "#ffb74d"],
         text=[f"{v/1000:.0f}k EUR" for v in cost_values],
-        textposition="outside",
+        textposition="inside", insidetextanchor="end", textfont=dict(color="white", size=14),
     ))
     fig3.add_hline(y=budget / 1000, line_dash="dashdot", line_color="red",
                    annotation_text=f"Budget ({budget/1000:.0f}k EUR)")
     fig3.update_layout(
         title="Total cost over the horizon: optimised plan vs baselines",
         height=320, yaxis_title="Total cost (k EUR)",
-        showlegend=False, yaxis=dict(range=[0, max(cost_values) / 1000 * 1.3]),
+        # Include the budget in the range, otherwise its line falls outside the chart
+        showlegend=False, yaxis=dict(range=[0, max(max(cost_values), budget) / 1000 * 1.2]),
     )
     st.plotly_chart(fig3, use_container_width=True)
 
@@ -601,8 +602,11 @@ with tab3:
             name="Service level (%)", line=dict(color="#e53935", width=2, dash="dash"),
             mode="lines+markers",
         ), secondary_y=True)
-        fig_s.add_hline(y=min_sl * 100, line_dash="dot", line_color="#e53935",
-                        secondary_y=True)
+        fig_s.add_hline(y=min_sl * 100, line_dash="dot", line_color="#e53935", secondary_y=True)
+        # Placed by hand: add_hline's own annotation uses the cost axis, not the secondary one
+        fig_s.add_annotation(x=0, xref="paper", y=min_sl * 100, yref="y2",
+                             text=f"target {min_sl:.0%}", showarrow=False,
+                             xanchor="left", yanchor="bottom", font=dict(color="#e53935", size=11))
         infeasible = tdf[~tdf["feasible"]]
         if not infeasible.empty:
             for _, row in infeasible.iterrows():
@@ -616,9 +620,17 @@ with tab3:
             ),
             margin=dict(l=10, r=10, t=40, b=10),
         )
-        fig_s.update_yaxes(title_text="kEUR", secondary_y=False, title_font_color="#1565c0")
-        fig_s.update_yaxes(title_text="SL %", secondary_y=True, title_font_color="#e53935",
-                           range=[0, 110])
+        # Cost starts at zero so small cost moves are not exaggerated. The service-level axis
+        # is zoomed on the band that matters (lowest value / target up to 100%) with explicit
+        # ticks: left on auto, it was synced to the cost grid and got unreadable ticks.
+        sl_pct = tdf["service_level"] * 100
+        sl_low = max(0, int(min(sl_pct.min(), min_sl * 100) - 5) // 5 * 5)
+        sl_step = 5 if 100 - sl_low <= 30 else 10
+        fig_s.update_yaxes(title_text="Cost (kEUR)", secondary_y=False, title_font_color="#1565c0",
+                           range=[0, tdf["total_cost"].max() / 1000 * 1.15])
+        fig_s.update_yaxes(title_text="Service level", secondary_y=True, title_font_color="#e53935",
+                           range=[sl_low, 102], tickmode="linear", tick0=sl_low, dtick=sl_step,
+                           ticksuffix="%", showgrid=False)
         col.plotly_chart(fig_s, use_container_width=True)
 
     with st.expander("Raw sensitivity tables"):
