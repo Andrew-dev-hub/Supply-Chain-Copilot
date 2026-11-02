@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D Factory Replay</title>
+<style>
+  :root {
+    --card: rgba(255, 255, 255, 0.93); --ink: #1d2433; --muted: #5d6678; --line: #d5dae3;
+    --green: #2e9d5b; --amber: #e0a020; --red: #d64545; --accent: #3a6ff7;
+    --busy: #f08c2a; --idle: #3d8fe0; --empty: #9aa1ad;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; color: var(--ink);
+    background: linear-gradient(180deg, #f5f7fa 0%, #e2e7ee 100%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #scene { position: absolute; inset: 0; }
+  .card {
+    position: absolute; top: 12px; width: 250px; padding: 9px 12px; font-size: 12px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); backdrop-filter: blur(4px);
+  }
+  #card-opt { left: 12px; }
+  #card-flat { right: 12px; }
+  .card h3 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; color: #fff; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; padding: 1.5px 0; }
+  .row span:first-child { color: var(--muted); }
+  .row b.bad { color: var(--red); }
+  .crew { display: flex; gap: 8px; padding: 3px 0 4px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; vertical-align: -1px; }
+  .cause { margin-top: 7px; padding: 6px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+  #bar {
+    position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 8px 12px;
+    display: flex; gap: 14px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  }
+  .controls { display: flex; gap: 6px; align-items: center; }
+  button {
+    font: inherit; font-size: 13px; padding: 4px 10px; cursor: pointer; color: var(--ink);
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #week-label { width: 140px; font-size: 12.5px; line-height: 1.3; }
+  #week-label b { font-size: 14px; }
+  #timeline { flex: 1; display: grid; gap: 3px; align-items: center; }
+  .tl-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; padding-right: 6px; }
+  .cell {
+    height: 18px; border-radius: 3px; cursor: pointer; opacity: 0.72;
+    font-size: 10px; color: #fff; display: flex; align-items: center; justify-content: center;
+  }
+  .cell:hover { opacity: 1; }
+  .cell.cur { opacity: 1; outline: 2px solid var(--ink); outline-offset: 1px; }
+  .legend { display: grid; grid-template-columns: auto auto; column-gap: 12px; row-gap: 2px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .legend i.round { border-radius: 50%; }
+  #err {
+    display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; font-size: 14px; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<div class="card" id="card-opt"></div>
+<div class="card" id="card-flat"></div>
+<div id="bar">
+  <div class="controls">
+    <button id="play" title="Play / pause (space)">⏸</button>
+    <button data-speed="1" class="on">1×</button>
+    <button data-speed="2">2×</button>
+    <button data-speed="4">4×</button>
+  </div>
+  <div id="week-label"></div>
+  <div id="timeline"></div>
+  <div class="legend">
+    <span><i style="background:var(--green)"></i>All served</span>
+    <span><i class="round" style="background:var(--busy)"></i>Working</span>
+    <span><i style="background:var(--amber)"></i>Tight (≥95% used)</span>
+    <span><i class="round" style="background:var(--idle)"></i>Idle (paid, no work)</span>
+    <span><i style="background:var(--red)"></i>Shortage</span>
+    <span><i class="round" style="background:var(--empty)"></i>Empty station</span>
+  </div>
+</div>
+<div id="err">The 3D view could not start: it needs WebGL and an internet connection to load Three.js.</div>
+
+<script type="application/json" id="factory-data">__FACTORY_DATA__</script>
+<script>
+  // Shown only if the module below never finishes (CDN blocked, no WebGL...)
+  setTimeout(function () {
+    if (!window.__factoryReady) document.getElementById("err").style.display = "flex";
+  }, 8000);
+</script>
+<script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const DATA = JSON.parse(document.getElementById("factory-data").textContent);
+const N_WEEKS = DATA.weeks.length;
+const WEEK_SECONDS = 5;            // one week lasts 5 s at 1x
+const STATUS_COLOR = { green: "#2e9d5b", amber: "#e0a020", red: "#d64545" };
+const STATUS_LABEL = { green: "All served", amber: "Tight", red: "Shortage" };
+
+// Workstation grid: one station per worker (two per station above 30 workers)
+const PER_STATION = DATA.max_workers > 30 ? 2 : 1;
+const N_STATIONS = Math.ceil(DATA.max_workers / PER_STATION);
+const COLS = Math.min(10, N_STATIONS);
+const ROWS = Math.ceil(N_STATIONS / COLS);
+const STATION_DX = 1.3, STATION_DZ = 1.55, STATION_Z0 = -5.4;
+
+const fmt = (n) => Math.round(n).toLocaleString("en-US");
+const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+
+// ── Renderer, camera, lights ─────────────────────────────────────────
+const host = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setClearColor(0x000000, 0);   // the CSS gradient is the sky
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog("#e4e8ee", 55, 120);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
+camera.position.set(0, 27, 27);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, -4);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.45;
+controls.minDistance = 8;
+controls.maxDistance = 90;
+
+scene.add(new THREE.HemisphereLight("#ffffff", "#b4bcc9", 1.5));
+const sun = new THREE.DirectionalLight("#fff6e8", 2.4);
+sun.position.set(14, 32, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 24, bottom: -24, near: 1, far: 100 });
+scene.add(sun);
+const fill = new THREE.DirectionalLight("#dfe8ff", 0.6);
+fill.position.set(-20, 15, 10);
+scene.add(fill);
+
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(host);
+resize();
+
+// ── Shared helpers: geometries and materials are created once and reused ──
+const GEO = new Map();
+function boxGeo(w, h, d) {
+  const k = `${w}|${h}|${d}`;
+  if (!GEO.has(k)) GEO.set(k, new THREE.BoxGeometry(w, h, d));
+  return GEO.get(k);
+}
+const mat = (color, opts = {}) =>
+  new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05, ...opts });
+
+function block(w, h, d, material, x, y, z, cast = true) {
+  const m = new THREE.Mesh(boxGeo(w, h, d), material);
+  m.position.set(x, y, z);
+  m.castShadow = cast;
+  m.receiveShadow = true;
+  return m;
+}
+
+function canvasTexture(w, h, draw) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  draw(canvas.getContext("2d"), w, h);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function flatPlane(w, d, material, x, y, z) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, y, z);
+  m.receiveShadow = true;
+  return m;
+}
+
+function hazardStripes(ctx, x, y, w, h, c1, c2, step) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.fillStyle = c1; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = c2;
+  for (let s = -h; s < w + h; s += step * 2) {
+    ctx.beginPath();
+    ctx.moveTo(x + s, y + h); ctx.lineTo(x + s + step, y + h);
+    ctx.lineTo(x + s + step + h, y); ctx.lineTo(x + s + h, y);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Textures ─────────────────────────────────────────────────────────
+// Floor: 20 x 14 units painted at 70 px per unit (canvas top = back of the factory)
+const PX = 70;
+const fx = (x) => (x + 10) * PX, fz = (z) => (z + 7) * PX;
+const zoneX0 = -((COLS - 1) * STATION_DX) / 2 - 0.85, zoneX1 = -zoneX0;
+const zoneZ0 = STATION_Z0 - 0.65, zoneZ1 = STATION_Z0 + (ROWS - 1) * STATION_DZ + 1.35;
+
+const floorTex = canvasTexture(20 * PX, 14 * PX, (ctx, w, h) => {
+  ctx.fillStyle = "#d4d9e0"; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(120,130,145,0.18)"; ctx.lineWidth = 2;
+  for (let x = 0; x <= w; x += 2 * PX) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y <= h; y += 2 * PX) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  // Production zone: yellow safety line
+  ctx.strokeStyle = "#e8b923"; ctx.lineWidth = 7; ctx.setLineDash([28, 14]);
+  ctx.strokeRect(fx(zoneX0), fz(zoneZ0), fx(zoneX1) - fx(zoneX0), fz(zoneZ1) - fz(zoneZ0));
+  ctx.setLineDash([]);
+  // Walkway between production and the output belt
+  ctx.fillStyle = "rgba(46,157,91,0.08)";
+  ctx.fillRect(fx(-7.4), fz(zoneZ1 + 0.4), fx(7.4) - fx(-7.4), fz(3.4) - fz(zoneZ1 + 0.4));
+  // Shipping dock bay
+  hazardStripes(ctx, fx(8.1), fz(0.6), fx(10) - fx(8.1), 14, "#f2c230", "#1d2433", 14);
+  hazardStripes(ctx, fx(8.1), fz(5.8) - 14, fx(10) - fx(8.1), 14, "#f2c230", "#1d2433", 14);
+  ctx.fillStyle = "rgba(29,36,51,0.55)";
+  ctx.font = "bold 40px system-ui, Segoe UI, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("PRODUCTION", fx(0), fz(zoneZ1) + 44);
+  ctx.save(); ctx.translate(fx(9.05), fz(3.2)); ctx.rotate(-Math.PI / 2);
+  ctx.font = "bold 30px system-ui, Segoe UI, sans-serif"; ctx.fillText("SHIPPING", 0, 0);
+  ctx.restore();
+});
+const pileTex = canvasTexture(280, 160, (ctx, w, h) => {
+  hazardStripes(ctx, 0, 0, w, h, "#f6d6d6", "#e7a3a3", 18);
+  ctx.strokeStyle = "#d64545"; ctx.lineWidth = 8; ctx.strokeRect(4, 4, w - 8, h - 8);
+  ctx.fillStyle = "#b22f2f"; ctx.font = "bold 30px system-ui, Segoe UI, sans-serif";
+  ctx.textAlign = "center"; ctx.fillText("BACKORDERS", w / 2, h - 18);
+});
+const wallTex = canvasTexture(1800, 300, (ctx, w, h) => {
+  ctx.fillStyle = "#b9c0cc"; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(70,80,95,0.25)"; ctx.lineWidth = 3;
+  for (let x = 150; x < w; x += 150) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  // Window band
+  for (let x = 330; x < w - 60; x += 150) {
+    const g = ctx.createLinearGradient(0, 40, 0, 120);
+    g.addColorStop(0, "#d9ecff"); g.addColorStop(1, "#8fb3d9");
+    ctx.fillStyle = g; ctx.fillRect(x, 40, 110, 80);
+    ctx.strokeStyle = "#6b7585"; ctx.lineWidth = 5; ctx.strokeRect(x, 40, 110, 80);
+  }
+  // Inbound door where the input belt comes in (wall spans x = -10..8)
+  const doorX = (-8.2 + 10) * 100;
+  ctx.fillStyle = "#3b414c"; ctx.fillRect(doorX - 75, 150, 150, 150);
+  hazardStripes(ctx, doorX - 90, 135, 180, 15, "#f2c230", "#1d2433", 12);
+  ctx.fillStyle = "#58606d"; ctx.fillRect(0, h - 22, w, 22);   // plinth
+});
+// Conveyor belts: stripes across the direction of travel, scrolled while running
+const beltIn = canvasTexture(64, 64, (ctx) => {
+  ctx.fillStyle = "#3d434e"; ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = "#5a616e"; ctx.fillRect(0, 0, 64, 10);
+});
+beltIn.wrapS = beltIn.wrapT = THREE.RepeatWrapping;
+beltIn.repeat.set(1, 11.4 / 0.45);
+const beltOut = canvasTexture(64, 64, (ctx) => {
+  ctx.fillStyle = "#3d434e"; ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = "#5a616e"; ctx.fillRect(0, 0, 10, 64);
+});
+beltOut.wrapS = beltOut.wrapT = THREE.RepeatWrapping;
+beltOut.repeat.set(16.4 / 0.45, 1);
+const kraftTex = canvasTexture(64, 64, (ctx) => {
+  ctx.fillStyle = "#c9a46c"; ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = "#e3c891"; ctx.fillRect(0, 26, 64, 12);
+  ctx.strokeStyle = "#9f7c48"; ctx.lineWidth = 4; ctx.strokeRect(2, 2, 60, 60);
+});
+const zzTex = canvasTexture(128, 128, (ctx) => {
+  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#3d8fe0"; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.arc(64, 58, 48, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 98); ctx.lineTo(30, 122); ctx.lineTo(60, 104); ctx.fill();
+  ctx.fillStyle = "#3d8fe0"; ctx.font = "bold 52px system-ui, Segoe UI, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("Zz", 64, 60);
+});
+const glowTex = canvasTexture(128, 128, (ctx) => {
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, "rgba(255,255,255,0.45)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+});
+
+// ── Shared materials ─────────────────────────────────────────────────
+const M = {
+  ground: mat("#dde2e8", { roughness: 1 }),
+  slab: mat("#aab2be"),
+  floor: mat("#ffffff", { map: floorTex, roughness: 0.9 }),
+  pile: mat("#ffffff", { map: pileTex, roughness: 0.9 }),
+  wall: mat("#ffffff", { map: wallTex }),
+  wallTrim: mat("#7d8695"),
+  beltIn: mat("#ffffff", { map: beltIn, roughness: 0.6 }),
+  beltOut: mat("#ffffff", { map: beltOut, roughness: 0.6 }),
+  beltFrame: mat("#8e96a3", { metalness: 0.4, roughness: 0.45 }),
+  beltLeg: mat("#5d6574", { metalness: 0.4, roughness: 0.5 }),
+  table: mat("#8a6f52"),
+  machine: mat("#6c7584", { metalness: 0.35, roughness: 0.45 }),
+  machineDark: mat("#9ea5b0", { metalness: 0.2, roughness: 0.6 }),
+  screenBusy: mat("#0c2a18", { emissive: "#34d27a", emissiveIntensity: 1.1 }),
+  screenIdle: mat("#0c1a2a", { emissive: "#3d8fe0", emissiveIntensity: 0.6 }),
+  screenOff: mat("#1b1f26", { roughness: 0.3 }),
+  lampBusy: mat("#1b3", { emissive: "#34d27a", emissiveIntensity: 1.6 }),
+  lampIdle: mat("#135", { emissive: "#3d8fe0", emissiveIntensity: 1.2 }),
+  lampOff: mat("#3a3f48"),
+  vestBusy: mat("#f08c2a"),
+  vestIdle: mat("#3d8fe0"),
+  idleRing: new THREE.MeshBasicMaterial({ color: "#3d8fe0", transparent: true, opacity: 0.85, depthWrite: false }),
+  trousers: mat("#2f3a4f"),
+  skin: mat("#f1c9a5"),
+  hat: mat("#f2c230", { roughness: 0.4 }),
+  kraft: mat("#ffffff", { map: kraftTex }),
+  redBox: mat("#e04848", { emissive: "#7a1010", emissiveIntensity: 0.5 }),
+  trailer: mat("#f1f3f6", { roughness: 0.5 }),
+  cab: mat("#2b5fd9", { metalness: 0.3, roughness: 0.4 }),
+  glass: mat("#1b2433", { metalness: 0.6, roughness: 0.15 }),
+  chassis: mat("#2a2e35"),
+  tire: mat("#1f2226", { roughness: 0.9 }),
+  headlight: mat("#fff6c8", { emissive: "#fff1a8", emissiveIntensity: 1.2 }),
+  signBack: mat("#2a3140"),
+};
+
+const ground = flatPlane(200, 140, M.ground, 0, 0, 0);
+scene.add(ground);
+
+// ── Box paths, in factory-local coordinates (belt top at y = 0.5) ───
+const BOX_Y = 0.78;
+const P_IN = new THREE.Vector3(-8.2, BOX_Y, -6.6);    // raw demand enters at the back
+const P_CORNER = new THREE.Vector3(-8.2, BOX_Y, 4.2); // production done: served or not
+const P_DOCK = new THREE.Vector3(7.8, BOX_Y, 4.2);    // end of the output belt
+const P_TRUCK = new THREE.Vector3(9.2, 1.2, 4.2);     // inside the trailer
+const TRUCK_BASE = new THREE.Vector3(9.2, 0, 3.0);
+const BOX_POOL = 40;
+const TRAVEL_U = 0.35;  // share of the week a served box takes to reach the truck
+
+function pathLength(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) len += points[i].distanceTo(points[i - 1]);
+  return len;
+}
+function pointOnPath(points, dist, out) {
+  for (let i = 1; i < points.length; i++) {
+    const seg = points[i].distanceTo(points[i - 1]);
+    if (dist <= seg) return out.lerpVectors(points[i - 1], points[i], dist / seg);
+    dist -= seg;
+  }
+  return out.copy(points[points.length - 1]);
+}
+const SERVED_PATH = [P_IN, P_CORNER, P_DOCK, P_TRUCK];
+const SPEED = pathLength(SERVED_PATH) / TRAVEL_U;   // distance per unit of week progress
+const CORNER_DIST = P_IN.distanceTo(P_CORNER);
+
+function pileSlot(k) {
+  const col = k % 4, row = Math.floor(k / 4) % 2, layer = Math.floor(k / 8);
+  return new THREE.Vector3(-7.4 + col * 0.62, 0.48 + layer * 0.57, 5.7 + row * 0.62);
+}
+
+// ── Models ───────────────────────────────────────────────────────────
+const G = {
+  torso: new THREE.CapsuleGeometry(0.14, 0.22, 4, 10),
+  head: new THREE.SphereGeometry(0.12, 14, 10),
+  hat: new THREE.SphereGeometry(0.135, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+  brim: new THREE.CylinderGeometry(0.17, 0.17, 0.02, 16),
+  lamp: new THREE.SphereGeometry(0.07, 10, 8),
+  screen: new THREE.PlaneGeometry(0.36, 0.2),
+  wheel: new THREE.CylinderGeometry(0.34, 0.34, 0.26, 18),
+  beacon: new THREE.SphereGeometry(0.28, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+  beaconBase: new THREE.CylinderGeometry(0.3, 0.34, 0.2, 16),
+  ring: new THREE.RingGeometry(0.22, 0.36, 28),
+};
+
+function makeWorker() {
+  const root = new THREE.Group();
+  const add = (geo, material, x, y, z, cast = true) => {
+    const m = new THREE.Mesh(geo, material);
+    m.position.set(x, y, z); m.castShadow = cast;
+    root.add(m); return m;
+  };
+  add(boxGeo(0.26, 0.36, 0.14), M.trousers, 0, 0.18, 0);
+  const torso = add(G.torso, M.vestBusy, 0, 0.58, 0);
+  add(G.head, M.skin, 0, 0.9, 0);
+  add(G.hat, M.hat, 0, 0.93, 0, false);
+  add(G.brim, M.hat, 0, 0.93, 0.02, false);
+  const arms = [-1, 1].map((side) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.19, 0.74, 0);
+    const arm = new THREE.Mesh(boxGeo(0.08, 0.32, 0.08), M.vestBusy);
+    arm.position.y = -0.15; arm.castShadow = true;
+    pivot.add(arm); root.add(pivot);
+    return { pivot, arm };
+  });
+  const zz = new THREE.Sprite(new THREE.SpriteMaterial({ map: zzTex, depthWrite: false }));
+  zz.scale.set(0.5, 0.5, 1);
+  zz.position.set(0.18, 1.32, 0);
+  root.add(zz);
+  // Blue floor ring marking an idle worker, visible from far away
+  const ring = new THREE.Mesh(G.ring, M.idleRing);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.01;
+  root.add(ring);
+  root.scale.setScalar(1.3);
+  return { root, torso, arms, zz, ring };
+}
+
+function makeTruck() {
+  const t = new THREE.Group();
+  t.add(block(1.6, 0.25, 4.9, M.chassis, 0, 0.45, -0.25));
+  t.add(block(1.8, 1.7, 3.4, M.trailer, 0, 1.42, 0.55));
+  t.add(block(1.82, 0.22, 3.42, M.cab, 0, 0.95, 0.55));
+  t.add(block(1.7, 1.25, 1.2, M.cab, 0, 1.1, -1.95));
+  t.add(block(1.5, 0.45, 0.05, M.glass, 0, 1.4, -2.56, false));
+  t.add(block(0.25, 0.12, 0.04, M.headlight, -0.55, 0.75, -2.56, false));
+  t.add(block(0.25, 0.12, 0.04, M.headlight, 0.55, 0.75, -2.56, false));
+  for (const wz of [-1.95, 0.6, 1.55]) {
+    for (const wx of [-0.8, 0.8]) {
+      const wheel = new THREE.Mesh(G.wheel, M.tire);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wx, 0.34, wz);
+      wheel.castShadow = true;
+      t.add(wheel);
+    }
+  }
+  return t;
+}
+
+function drawSign(ctx, w, h, name, status) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#1d2433";
+  ctx.beginPath(); ctx.roundRect(0, 0, w, h, 26); ctx.fill();
+  ctx.fillStyle = STATUS_COLOR[status];
+  ctx.beginPath(); ctx.roundRect(0, 0, 34, h, [26, 0, 0, 26]); ctx.fill();
+  ctx.fillStyle = "#ffffff"; ctx.textBaseline = "middle";
+  ctx.font = "bold 66px system-ui, Segoe UI, sans-serif"; ctx.textAlign = "left";
+  ctx.fillText(name, 70, h / 2 + 2);
+  ctx.fillStyle = STATUS_COLOR[status];
+  ctx.font = "bold 46px system-ui, Segoe UI, sans-serif"; ctx.textAlign = "right";
+  ctx.fillText(STATUS_LABEL[status].toUpperCase(), w - 40, h / 2 + 2);
+}
+
+// ── One factory ──────────────────────────────────────────────────────
+class Factory {
+  constructor(plan, originX) {
+    this.plan = plan;
+    const g = (this.group = new THREE.Group());
+    g.position.x = originX;
+    scene.add(g);
+
+    // Slab, painted floor, back wall
+    g.add(block(20, 0.2, 14, M.slab, 0, 0.1, 0));
+    g.add(flatPlane(20, 14, M.floor, 0, 0.201, 0));
+    const wall = block(18, 3, 0.3, [M.wallTrim, M.wallTrim, M.wallTrim, M.wallTrim, M.wall, M.wallTrim], -1, 1.7, -7.35);
+    g.add(wall);
+    g.add(block(18.2, 0.15, 0.45, M.wallTrim, -1, 3.27, -7.35));
+
+    // Floor border that takes the colour of the week's status
+    this.borderMat = mat(STATUS_COLOR.green, { emissive: STATUS_COLOR.green, emissiveIntensity: 0.45 });
+    g.add(block(20.3, 0.12, 0.18, this.borderMat, 0, 0.24, 7.05, false));
+    g.add(block(0.18, 0.12, 14.2, this.borderMat, -10.05, 0.24, 0, false));
+    g.add(block(0.18, 0.12, 14.2, this.borderMat, 10.05, 0.24, 0, false));
+
+    // Sign on top of the wall, redrawn when the status changes
+    this.signCanvas = document.createElement("canvas");
+    this.signCanvas.width = 1024; this.signCanvas.height = 160;
+    this.signTex = new THREE.CanvasTexture(this.signCanvas);
+    this.signTex.colorSpace = THREE.SRGBColorSpace;
+    g.add(block(8.2, 1.4, 0.12, M.signBack, -1, 4.05, -7.42));
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 1.25),
+      new THREE.MeshBasicMaterial({ map: this.signTex, transparent: true }));
+    sign.position.set(-1, 4.05, -7.35);
+    g.add(sign);
+    for (const px of [-4, 2]) g.add(block(0.12, 0.7, 0.12, M.wallTrim, px, 3.45, -7.42));
+
+    // Status beacon with a glow halo: steady green / amber, flashing red on a shortage
+    g.add(new THREE.Mesh(G.beaconBase, M.wallTrim).translateX(4.6).translateY(3.45).translateZ(-7.35));
+    this.beaconMat = mat("#333333", { emissive: STATUS_COLOR.green, emissiveIntensity: 1.5 });
+    const dome = new THREE.Mesh(G.beacon, this.beaconMat);
+    dome.position.set(4.6, 3.55, -7.35);
+    g.add(dome);
+    this.glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: STATUS_COLOR.green, blending: THREE.AdditiveBlending,
+      depthWrite: false, transparent: true,
+    }));
+    this.glow.position.set(4.6, 3.7, -7.2);
+    this.glow.scale.set(2, 2, 1);
+    g.add(this.glow);
+
+    // Workstations: table + machine (screen + lamp) + worker
+    this.stations = [];
+    for (let i = 0; i < N_STATIONS; i++) {
+      const x = -((COLS - 1) * STATION_DX) / 2 + (i % COLS) * STATION_DX;
+      const z = STATION_Z0 + Math.floor(i / COLS) * STATION_DZ;
+      g.add(block(0.95, 0.5, 0.6, M.table, x, 0.45, z));
+      const machine = block(0.55, 0.4, 0.38, M.machine, x, 0.9, z - 0.08);
+      g.add(machine);
+      const screen = new THREE.Mesh(G.screen, M.screenOff);
+      screen.position.set(x, 0.92, z + 0.115);
+      g.add(screen);
+      const lamp = new THREE.Mesh(G.lamp, M.lampOff);
+      lamp.position.set(x + 0.19, 1.16, z - 0.12);
+      g.add(lamp);
+      const worker = makeWorker();
+      g.add(worker.root);
+      this.stations.push({ x, z, machine, screen, lamp, worker, phase: i * 0.9, state: "empty" });
+    }
+
+    // Conveyors: input along the left side, output along the front to the dock
+    const belt = (len, alongZ, cx, cz, beltMat) => {
+      const [w, d] = alongZ ? [1.0, len] : [len, 1.0];
+      g.add(block(w, 0.12, d, M.beltFrame, cx, 0.42, cz));
+      g.add(flatPlane(alongZ ? 0.8 : len, alongZ ? len : 0.8, beltMat, cx, 0.485, cz));
+      for (const side of [-1, 1]) {   // side rails
+        g.add(alongZ ? block(0.06, 0.1, len, M.beltFrame, cx + side * 0.47, 0.53, cz, false)
+                     : block(len, 0.1, 0.06, M.beltFrame, cx, 0.53, cz + side * 0.47, false));
+      }
+      for (let s = -len / 2 + 0.6; s < len / 2; s += 2.2) {   // legs
+        g.add(alongZ ? block(0.8, 0.16, 0.1, M.beltLeg, cx, 0.28, cz + s, false)
+                     : block(0.1, 0.16, 0.8, M.beltLeg, cx + s, 0.28, cz, false));
+      }
+    };
+    belt(11.4, true, -8.2, -1.2, M.beltIn);
+    belt(16.4, false, -0.2, 4.2, M.beltOut);
+
+    // Zone where unserved demand piles up
+    g.add(flatPlane(2.8, 1.6, M.pile, -6.5, 0.205, 6.0));
+
+    this.truck = makeTruck();
+    this.truck.position.copy(TRUCK_BASE);
+    g.add(this.truck);
+
+    // Reusable boxes
+    this.boxes = [];
+    for (let i = 0; i < BOX_POOL; i++) {
+      const m = block(0.55, 0.55, 0.55, M.kraft, 0, 0, 0);
+      m.visible = false;
+      g.add(m);
+      this.boxes.push({ mesh: m, start: 0, served: true, path: null, len: 0 });
+    }
+    this.status = null;
+  }
+
+  setStatus(status) {
+    if (status === this.status) return;
+    this.status = status;
+    const color = new THREE.Color(STATUS_COLOR[status]);
+    this.borderMat.color.copy(color);
+    this.borderMat.emissive.copy(color);
+    this.beaconMat.emissive.copy(color);
+    this.glow.material.color.copy(color);
+    drawSign(this.signCanvas.getContext("2d"), 1024, 160, this.plan.name, status);
+    this.signTex.needsUpdate = true;
+  }
+
+  setWeek(i) {
+    const w = this.plan.weeks[i], dem = DATA.weeks[i];
+    this.setStatus(w.status);
+
+    // Stations: working (producing), idle (paid but not needed), or empty (not staffed)
+    this.stations.forEach((s, j) => {
+      const staffed = Math.min(Math.max(w.workers - j * PER_STATION, 0), PER_STATION) > 0;
+      const busy = Math.min(Math.max(w.busy - j * PER_STATION, 0), PER_STATION) > 0;
+      s.state = busy ? "busy" : staffed ? "idle" : "empty";
+      const wk = s.worker;
+      wk.root.visible = staffed;
+      wk.root.rotation.z = 0;
+      wk.zz.visible = wk.ring.visible = s.state === "idle";
+      const vest = busy ? M.vestBusy : M.vestIdle;
+      wk.torso.material = vest;
+      wk.arms.forEach((a) => { a.arm.material = vest; a.pivot.rotation.set(0, 0, 0); });
+      if (busy) {
+        // Facing the machine, back to the camera
+        wk.root.position.set(s.x, 0.2, s.z + 0.62);
+        wk.root.rotation.y = Math.PI;
+      } else {
+        // Stepped back from the station, facing the camera
+        wk.root.position.set(s.x + 0.18, 0.2, s.z + 0.98);
+        wk.root.rotation.y = 0;
+      }
+      s.screen.material = { busy: M.screenBusy, idle: M.screenIdle, empty: M.screenOff }[s.state];
+      s.lamp.material = { busy: M.lampBusy, idle: M.lampIdle, empty: M.lampOff }[s.state];
+      s.machine.material = s.state === "empty" ? M.machineDark : M.machine;
+    });
+
+    // Boxes: the actual demand arrives; what capacity cannot handle goes to the red pile
+    const unit = DATA.unit_per_box;
+    const total = Math.min(BOX_POOL, Math.max(1, Math.round(dem.actual / unit)));
+    const unserved = w.unmet > 0 ? Math.min(total, Math.max(1, Math.round(w.unmet / unit))) : 0;
+    const served = total - unserved;
+    this.boxes.forEach((b, k) => {
+      b.mesh.visible = false;
+      if (k >= total) { b.path = null; return; }
+      b.start = 0.04 + (0.48 * k) / Math.max(total - 1, 1);
+      b.served = k < served;
+      b.path = b.served ? SERVED_PATH : [P_IN, P_CORNER, pileSlot(k - served)];
+      b.len = pathLength(b.path);
+      b.mesh.material = M.kraft;
+      b.mesh.rotation.y = 0;
+    });
+  }
+
+  update(u, time) {
+    for (const b of this.boxes) {
+      if (!b.path) continue;
+      const dist = (u - b.start) * SPEED;
+      if (dist < 0 || (b.served && dist >= b.len)) { b.mesh.visible = false; continue; }
+      b.mesh.visible = true;
+      pointOnPath(b.path, Math.min(dist, b.len), b.mesh.position);
+      if (!b.served && dist > CORNER_DIST) b.mesh.material = M.redBox;
+    }
+
+    // Truck arrives at the start of the week and leaves loaded at the end
+    let dz = 0;
+    if (u < 0.06) dz = -18 * (1 - u / 0.06) ** 2;
+    else if (u > 0.92) dz = -18 * ((u - 0.92) / 0.08) ** 2;
+    this.truck.position.z = TRUCK_BASE.z + dz;
+
+    for (const s of this.stations) {
+      const wk = s.worker;
+      if (s.state === "busy") {
+        // Arms working at the machine, slight bob
+        const a = Math.sin(time * 7 + s.phase);
+        wk.arms[0].pivot.rotation.x = -1.05 + a * 0.35;
+        wk.arms[1].pivot.rotation.x = -1.05 - a * 0.35;
+        wk.root.position.y = 0.2 + Math.abs(a) * 0.03;
+      } else if (s.state === "idle") {
+        // Swaying on the spot, "Zz" bubble floating
+        wk.root.rotation.z = Math.sin(time * 1.6 + s.phase) * 0.05;
+        wk.zz.position.y = 1.32 + Math.sin(time * 2.2 + s.phase) * 0.06;
+      }
+    }
+
+    const flash = this.status === "red" ? 0.5 + 0.5 * Math.sin(time * 9) : 0.7;
+    this.beaconMat.emissiveIntensity = 0.6 + 1.6 * flash;
+    const glow = this.status === "red" ? 1.6 + 1.6 * flash : 1.8;
+    this.glow.scale.set(glow, glow, 1);
+    this.glow.material.opacity = this.status === "red" ? 0.35 + 0.6 * flash : 0.55;
+  }
+}
+
+const factories = DATA.plans.map((p, i) => new Factory(p, i === 0 ? -11.5 : 11.5));
+
+// ── Cards, week label, timeline ──────────────────────────────────────
+function renderCard(el, plan, i) {
+  const w = plan.weeks[i], dem = DATA.weeks[i], cur = DATA.currency;
+  let servedSoFar = 0, demandSoFar = 0;
+  for (let k = 0; k <= i; k++) { servedSoFar += plan.weeks[k].served; demandSoFar += DATA.weeks[k].actual; }
+  const col = STATUS_COLOR[w.status];
+  const idle = w.workers - w.busy, empty = DATA.max_workers - w.workers;
+  el.innerHTML = `
+    <h3>${plan.name}<span class="pill" style="background:${col}">${STATUS_LABEL[w.status]}</span></h3>
+    <div class="crew">
+      <span><i class="dot" style="background:var(--busy)"></i><b>${w.busy}</b> working</span>
+      <span><i class="dot" style="background:var(--idle)"></i><b>${idle}</b> idle</span>
+      <span><i class="dot" style="background:var(--empty)"></i><b>${empty}</b> empty</span>
+    </div>
+    <div class="row"><span>Capacity</span><b>${fmt(w.capacity)} units</b></div>
+    <div class="row"><span>Actual demand</span><b>${fmt(dem.actual)} units</b></div>
+    <div class="row"><span>Forecast</span><b>${fmt(dem.forecast)} units</b></div>
+    <div class="row"><span>Served</span><b>${fmt(w.served)} units</b></div>
+    <div class="row"><span>Unmet</span><b class="${w.unmet > 0 ? "bad" : ""}">${fmt(w.unmet)} units</b></div>
+    <div class="row"><span>Week cost</span><b>${fmt(w.cost)} ${cur}</b></div>
+    <div class="row"><span>Cumulative cost</span><b>${fmt(w.cum_cost)} ${cur}</b></div>
+    <div class="row"><span>Service level so far</span><b>${(100 * servedSoFar / demandSoFar).toFixed(1)}%</b></div>
+    <div class="cause" style="background:${col}22;color:${col}">${w.cause}</div>`;
+}
+
+const timeline = document.getElementById("timeline");
+timeline.style.gridTemplateColumns = `auto repeat(${N_WEEKS}, minmax(0, 1fr))`;
+const cells = DATA.plans.map((plan) => {
+  const lbl = document.createElement("div");
+  lbl.className = "tl-label";
+  lbl.textContent = plan.name;
+  timeline.appendChild(lbl);
+  return plan.weeks.map((w, i) => {
+    const c = document.createElement("div");
+    c.className = "cell";
+    c.style.background = STATUS_COLOR[w.status];
+    c.textContent = i + 1;
+    c.title = `Week ${i + 1} · ${DATA.weeks[i].date} · ${w.cause}`;
+    c.onclick = () => goTo(i);
+    timeline.appendChild(c);
+    return c;
+  });
+});
+
+// ── Playback ─────────────────────────────────────────────────────────
+let week = 0, u = 0, playing = true, speed = 1, time = 0;
+const playBtn = document.getElementById("play");
+
+function setWeek(i) {
+  week = i;
+  factories.forEach((f) => f.setWeek(i));
+  renderCard(document.getElementById("card-opt"), DATA.plans[0], i);
+  renderCard(document.getElementById("card-flat"), DATA.plans[1], i);
+  document.getElementById("week-label").innerHTML =
+    `<b>Week ${i + 1} / ${N_WEEKS}</b><br>${DATA.weeks[i].date} · ${esc(DATA.sku)}`;
+  cells.flat().forEach((c) => c.classList.remove("cur"));
+  cells.forEach((row) => row[i].classList.add("cur"));
+}
+function goTo(i) { u = 0; setWeek(i); }
+function setPlaying(p) { playing = p; playBtn.textContent = p ? "⏸" : "▶"; }
+
+playBtn.onclick = () => {
+  if (!playing && week === N_WEEKS - 1 && u >= 1) goTo(0);  // replay from the start
+  setPlaying(!playing);
+};
+document.querySelectorAll("button[data-speed]").forEach((b) => {
+  b.onclick = () => {
+    speed = Number(b.dataset.speed);
+    document.querySelectorAll("button[data-speed]").forEach((x) => x.classList.toggle("on", x === b));
+  };
+});
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space") { e.preventDefault(); playBtn.click(); }
+});
+
+const clock = new THREE.Clock();
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (!host.clientWidth || document.hidden) return;   // tab hidden: skip rendering
+  time += dt;
+  if (playing) {
+    u += (dt * speed) / WEEK_SECONDS;
+    if (u >= 1) {
+      if (week < N_WEEKS - 1) goTo(week + 1);
+      else { u = 1; setPlaying(false); }
+    }
+    if (u < 0.9) {   // belts run while boxes are flowing
+      const d = (dt * speed * SPEED) / WEEK_SECONDS / 0.45;
+      beltIn.offset.y += d;
+      beltOut.offset.x -= d;
+    }
+  }
+  factories.forEach((f) => f.update(u, time));
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+setWeek(0);
+window.__factoryReady = true;
+tick();
+</script>
+</body>
+</html>

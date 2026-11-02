@@ -25,6 +25,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -45,6 +46,7 @@ from src.analysis.sensitivity import SensitivityAnalysis
 from src.interpretation.context_builder import build_context
 from src.ingestion.schema_detector import detect_schema_rules, detect_schema_llm, ColumnMapping
 from src.ingestion.data_loader import load_file, apply_mapping, usable_skus
+from src.visualization import build_factory_data, render_factory_html
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -148,6 +150,42 @@ with st.sidebar:
             "CSV or Excel file", type=["csv", "xlsx", "xls"],
             help="Any tabular file with at least a date column and a numeric demand column.",
         )
+
+        with st.expander("📋 How should my file look?", expanded=uploaded is None):
+            st.markdown(
+                "**One row per date (and per product)**, with these columns:\n"
+                "- **Date** — e.g. `2024-01-08` or `08/01/2024`\n"
+                "- **Demand** — a number: units sold, quantity, orders…\n"
+                "- **Product** *(optional)* — SKU, item, store… "
+                "to forecast several series at once"
+            )
+            st.dataframe(
+                pd.DataFrame({
+                    "date":   ["2024-01-01", "2024-01-08", "2024-01-01", "2024-01-08"],
+                    "sku":    ["SKU-A", "SKU-A", "SKU-B", "SKU-B"],
+                    "demand": [120, 135, 48, 52],
+                }),
+                hide_index=True,
+            )
+            st.markdown(
+                "**Good to know**\n"
+                "- Daily or order-level rows are fine: they are summed per week.\n"
+                "- One row per product with week columns (`W0`, `W1`, … or "
+                "`Week_1`, …) also works.\n"
+                "- CSV with `,` `;` or tab separators, or Excel (first sheet).\n"
+                "- History: **at least ~1 year** of weeks; **2+ years** for the "
+                "models to learn the yearly seasonality.\n"
+                "- Clear column names (`date`, `quantity`, `product`) help the "
+                "auto-detection; you can fix the mapping below anyway.\n"
+                "- Personal data columns (email, name, street…) are removed automatically."
+            )
+            st.download_button(
+                "⬇️ Download a template CSV",
+                data="date,sku,demand\n2024-01-01,SKU-A,120\n2024-01-08,SKU-A,135\n"
+                     "2024-01-01,SKU-B,48\n2024-01-08,SKU-B,52\n",
+                file_name="template_demand.csv",
+                mime="text/csv",
+            )
 
         if uploaded is None:
             st.info("Upload a file to continue.")
@@ -305,8 +343,8 @@ fc, fc_results, alloc, dev, sensitivity, context = st.session_state["results"]
 #  Tabs
 # ══════════════════════════════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📈 Forecast", "👷 Optimisation", "🔍 Analysis", "🤖 AI Insights"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["📈 Forecast", "👷 Optimisation", "🔍 Analysis", "🤖 AI Insights", "🏭 3D Factory"]
 )
 
 # ─────────────────────────────────────────────────────────────────────
@@ -640,6 +678,26 @@ with tab3:
         for key, tdf in sensitivity.items():
             st.caption(key.capitalize())
             st.dataframe(tdf.round(3), use_container_width=True, hide_index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# TAB 5 — 3D FACTORY
+# ─────────────────────────────────────────────────────────────────────
+# Written before the AI Insights tab: that tab can st.stop() when the LLM fails.
+with tab5:
+    st.header(f"3D Factory Replay — {sku}")
+    st.caption(
+        "Both factories receive the actual demand of the test horizon, week by week. "
+        "Left: the optimised staffing plan. Right: the flat plan (same headcount every week, "
+        "sized on the forecast peak). Orange workers are producing, grey ones are paid but idle; "
+        "boxes that capacity cannot handle pile up in red. Drag to rotate, scroll to zoom, "
+        "click a week in the timeline to jump to it."
+    )
+    factory_html = render_factory_html(build_factory_data(fc, alloc))
+    if hasattr(st, "iframe"):  # newer Streamlit; components.html is deprecated there
+        st.iframe(factory_html, height=760)
+    else:
+        components.html(factory_html, height=760)
 
 
 # ─────────────────────────────────────────────────────────────────────
