@@ -6,7 +6,7 @@
 >
 > **AI & LLM skills:** Claude API integration · prompt engineering · structured (JSON) LLM output · natural language → optimisation constraints · LLM-assisted schema detection · model routing (Haiku / Sonnet) · AI-generated documentation · secure API-key handling
 >
-> **Supply chain & data skills:** demand forecasting (Holt-Winters, SARIMA, moving average) · forecast accuracy (MAPE / MAE / RMSE) · workforce & capacity planning · linear / mixed-integer programming (PuLP) · sensitivity & scenario analysis · service-level vs. cost trade-offs · data cleaning & PII removal · pandas · Streamlit / Plotly dashboards
+> **Supply chain & data skills:** demand forecasting (Holt-Winters, SARIMA, moving average) · forecast accuracy (MAPE / MAE / RMSE) · workforce & capacity planning · linear / mixed-integer programming (PuLP) · sensitivity & scenario analysis · service-level vs. cost trade-offs · data cleaning & PII removal · pandas · Streamlit / Plotly dashboards · 3D data visualisation (Three.js / WebGL)
 
 ![Workforce optimisation tab of the dashboard](docs/images/optimisation.jpg)
 
@@ -23,6 +23,7 @@ Operations teams have to answer two questions before every busy season: *how muc
 3. **Plans the workforce.** An optimisation model finds the cheapest staffing plan that respects budget, headcount, ramp limits and a minimum service level. From the command line, constraints can also be written in plain language and parsed by Claude (`py run_optimization.py --llm`); in the dashboard they are set with sliders.
 4. **Stress-tests the plan.** It flags weeks where the forecast error leaves the plan short, and shows how cost and service level move if demand, budget or headcount change.
 5. **Explains it with AI.** Claude writes an executive summary, answers what-if questions (re-running the optimiser for real numbers) and invents edge-case scenarios that are then tested automatically.
+6. **Replays the plan in 3D.** A Three.js factory shows, week by week, which plan runs short, which one pays idle workers, and why.
 
 Everything is available in an interactive Streamlit dashboard.
 
@@ -53,6 +54,14 @@ The seasonal models land close to the noise built into the data (about 4–6 % M
 | Demand forecast | Deviation & sensitivity |
 |---|---|
 | ![Forecast tab: Holt-Winters on SKU-B, 5.2 % MAPE](docs/images/forecast.jpg) | ![Analysis tab: deviation report and sensitivity charts for SKU-B](docs/images/analysis.jpg) |
+
+### 3D factory replay
+
+[![3D Factory tab: the optimised and flat plans replayed side by side, week 6 of SKU-A](docs/images/factory-3d.gif)](docs/images/factory-3d.jpg)
+
+The **🏭 3D Factory** tab replays the 13 test weeks in a Three.js scene. Two factories receive the same actual demand: the optimised plan on the left, the flat plan on the right (the same headcount every week, sized on the forecast peak). Workers are orange when they produce and blue, with a "Zz", when they are paid but have nothing to do; demand that capacity cannot handle piles up in red. A timeline colours each week green (all served), amber (≥ 95 % of capacity used) or red (shortage) and gives the cause.
+
+On SKU-A the trade-off shows without reading a single chart: the optimised plan runs short in weeks 6 and 13 (30 and 54 units, both because actual demand beat the forecast) and runs near full capacity in five other weeks, while the flat plan only misses 4 units in week 13 — but pays idle workers most weeks and costs 9,000 EUR more. <sub>Click the animation for a full-resolution still.</sub>
 
 ### AI insights
 
@@ -85,7 +94,7 @@ Ingestion ─▶ Forecasting ─▶ Optimisation ─▶ Risk & sensitivity ─�
 | Data & forecasting | `pandas`, `statsmodels` |
 | Optimisation | `PuLP` (linear / mixed-integer programming, CBC solver) |
 | AI | Anthropic Claude API — Haiku for fast extraction tasks, Sonnet for reasoning and writing |
-| Interface | `Streamlit`, `Plotly` |
+| Interface | `Streamlit`, `Plotly`, `Three.js` (3D replay) |
 
 Each stage also runs on its own from the command line (`run_forecast.py`, `run_optimization.py`, `run_analysis.py`, `run_interpretation.py`, `run_ingestion.py`).
 
@@ -95,6 +104,7 @@ Each stage also runs on its own from the command line (`run_forecast.py`, `run_o
 - Holt-Winters and SARIMA need at least two full years of training history (104 weeks plus the test horizon) to model yearly seasonality. With less, they fall back to a trend-only model; the model name and a dashboard warning say so.
 - The staffing model uses example assumptions (units per worker, cost per worker); they must be set to real values for a real site.
 - All reported results come from a synthetic demo dataset; accuracy on real data will differ and depends on how regular the demand is.
+- The 3D Factory tab loads Three.js from a CDN, so it needs an internet connection.
 - Delivery-delay and margin analysis is not built yet.
 
 ---
@@ -107,7 +117,7 @@ Each stage also runs on its own from the command line (`run_forecast.py`, `run_o
 >
 > **Compétences IA & LLM :** intégration de l'API Claude · prompt engineering · sorties structurées (JSON) · langage naturel → contraintes d'optimisation · détection de schéma assistée par LLM · routage de modèles (Haiku / Sonnet) · documentation générée par IA · gestion sécurisée des clés d'API
 >
-> **Compétences supply chain & data :** prévision de la demande (Holt-Winters, SARIMA, moyenne mobile) · mesure de précision (MAPE / MAE / RMSE) · planification des effectifs et de la capacité · programmation linéaire / en nombres entiers (PuLP) · analyse de sensibilité et de scénarios · arbitrage niveau de service / coût · nettoyage de données et suppression des données personnelles · pandas · tableaux de bord Streamlit / Plotly
+> **Compétences supply chain & data :** prévision de la demande (Holt-Winters, SARIMA, moyenne mobile) · mesure de précision (MAPE / MAE / RMSE) · planification des effectifs et de la capacité · programmation linéaire / en nombres entiers (PuLP) · analyse de sensibilité et de scénarios · arbitrage niveau de service / coût · nettoyage de données et suppression des données personnelles · pandas · tableaux de bord Streamlit / Plotly · visualisation de données en 3D (Three.js / WebGL)
 
 ![Onglet d'optimisation des effectifs du dashboard](docs/images/optimisation.jpg)
 
@@ -124,6 +134,7 @@ Avant chaque haute saison, les équipes opérations doivent répondre à deux qu
 3. **Planifie les effectifs.** Un modèle d'optimisation trouve le plan le moins coûteux qui respecte le budget, le nombre maximal de personnes, les limites de variation hebdomadaire et un niveau de service minimal. En ligne de commande, les contraintes peuvent aussi être écrites en langage naturel et interprétées par Claude (`py run_optimization.py --llm`) ; dans le dashboard, elles se règlent avec des curseurs.
 4. **Teste la solidité du plan.** Il repère les semaines où l'erreur de prévision laisse le plan en manque, et montre comment le coût et le niveau de service évoluent si la demande, le budget ou les effectifs changent.
 5. **Explique avec l'IA.** Claude rédige une synthèse, répond aux questions « et si… » (en relançant l'optimisation pour donner de vrais chiffres) et imagine des scénarios limites qui sont ensuite testés automatiquement.
+6. **Rejoue le plan en 3D.** Une usine Three.js montre, semaine par semaine, quel plan manque de capacité, lequel paie des ouvriers inactifs, et pourquoi.
 
 Le tout est accessible dans un tableau de bord Streamlit interactif.
 
@@ -154,6 +165,14 @@ Les modèles saisonniers s'approchent du bruit intégré aux données (environ 4
 | Prévision de la demande | Écarts & sensibilité |
 |---|---|
 | ![Onglet Forecast : Holt-Winters sur SKU-B, MAPE de 5,2 %](docs/images/forecast.jpg) | ![Onglet Analysis : rapport d'écarts et analyses de sensibilité pour SKU-B](docs/images/analysis.jpg) |
+
+#### Usine 3D
+
+[![Onglet 3D Factory : les plans optimisé et constant rejoués côte à côte, semaine 6 de SKU-A](docs/images/factory-3d.gif)](docs/images/factory-3d.jpg)
+
+L'onglet **🏭 3D Factory** rejoue les 13 semaines de test dans une scène Three.js. Deux usines reçoivent la même demande réelle : le plan optimisé à gauche, le plan constant à droite (le même effectif chaque semaine, calibré sur le pic de la prévision). Les ouvriers sont orange quand ils produisent et bleus, avec un « Zz », quand ils sont payés sans avoir de travail ; la demande que la capacité ne peut pas absorber s'empile en rouge. Une frise colore chaque semaine en vert (tout est servi), orange (≥ 95 % de la capacité utilisée) ou rouge (rupture) et en donne la cause.
+
+Sur SKU-A, l'arbitrage se voit sans lire un seul graphique : le plan optimisé est en rupture les semaines 6 et 13 (30 et 54 unités, à chaque fois parce que la demande réelle a dépassé la prévision) et tourne presque à pleine capacité cinq autres semaines, alors que le plan constant ne manque que 4 unités en semaine 13 — mais paie des ouvriers inactifs la plupart des semaines et coûte 9 000 EUR de plus. <sub>Cliquez sur l'animation pour une image en pleine résolution.</sub>
 
 #### Analyses IA
 
@@ -186,7 +205,7 @@ Ingestion ─▶ Prévision ─▶ Optimisation ─▶ Risques & sensibilité �
 | Données & prévision | `pandas`, `statsmodels` |
 | Optimisation | `PuLP` (programmation linéaire / en nombres entiers, solveur CBC) |
 | IA | API Claude d'Anthropic — Haiku pour l'extraction rapide, Sonnet pour le raisonnement et la rédaction |
-| Interface | `Streamlit`, `Plotly` |
+| Interface | `Streamlit`, `Plotly`, `Three.js` (rejeu 3D) |
 
 Chaque étape peut aussi être lancée seule en ligne de commande (`run_forecast.py`, `run_optimization.py`, `run_analysis.py`, `run_interpretation.py`, `run_ingestion.py`).
 
@@ -196,4 +215,5 @@ Chaque étape peut aussi être lancée seule en ligne de commande (`run_forecast
 - Holt-Winters et SARIMA ont besoin d'au moins deux années complètes d'historique d'entraînement (104 semaines plus l'horizon de test) pour modéliser la saisonnalité annuelle. En dessous, ils se replient sur un modèle de tendance seule ; le nom du modèle et un avertissement dans le dashboard le signalent.
 - Le modèle d'effectifs utilise des hypothèses d'exemple (unités par personne, coût par personne) : elles doivent être remplacées par des valeurs réelles pour un site réel.
 - Tous les résultats présentés proviennent d'un jeu de démonstration synthétique ; sur des données réelles, la précision sera différente et dépendra de la régularité de la demande.
+- L'onglet 3D Factory charge Three.js depuis un CDN : il a besoin d'une connexion internet.
 - L'analyse des retards de livraison et des marges n'est pas encore développée.
