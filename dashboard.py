@@ -38,7 +38,7 @@ st.set_page_config(
 # ── Imports ───────────────────────────────────────────────────────────
 from src.forecasting.data_generator import generate_demand_dataset
 from src.forecasting.pipeline import ForecastingPipeline
-from src.forecasting.models import MovingAverage, ExponentialSmoothing, SARIMAModel
+from src.forecasting.models import MovingAverage, ExponentialSmoothing, HoltWinters, SARIMAModel
 from src.optimization.constraints import WorkforceConstraints
 from src.optimization.pipeline import OptimizationPipeline
 from src.analysis.deviation import build_deviation_report
@@ -72,7 +72,7 @@ def forecast_sku(df_sku, sku, test_weeks, use_sarima=False):
     to an already-computed SKU does not refit the models. SARIMA is by far the most
     expensive model (~8 s and ~14 CPU-s per SKU), so it is opt-in (see SARIMA_ENABLED).
     """
-    models = [MovingAverage(window=12), ExponentialSmoothing(seasonal_periods=52)]
+    models = [MovingAverage(window=12), ExponentialSmoothing(), HoltWinters(seasonal_periods=52)]
     if use_sarima:
         models.append(SARIMAModel(order=(1, 1, 1), seasonal_order=(1, 1, 1, 52)))
     fc_pipe = ForecastingPipeline(test_weeks=test_weeks, deviation_threshold_pct=20.0, models=models)
@@ -278,7 +278,7 @@ with st.sidebar:
             help="Adds a third forecasting model. Accurate on strongly seasonal data, but it "
                  "takes several seconds per SKU and a lot of CPU.",
         )
-    model_options = [AUTO_MODEL, "MovingAverage", "ExponentialSmoothing"] + (["SARIMA"] if use_sarima else [])
+    model_options = [AUTO_MODEL, "MovingAverage", "ExponentialSmoothing", "Holt-Winters"] + (["SARIMA"] if use_sarima else [])
     model_choice = st.selectbox(
         "Forecast model", model_options,
         help="Auto keeps the model with the lowest MAPE on the test horizon. "

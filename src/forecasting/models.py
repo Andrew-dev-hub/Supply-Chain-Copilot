@@ -1,5 +1,5 @@
 """
-Forecasting models: Weighted Moving Average, Holt-Winters ETS, SARIMA.
+Forecasting models: Weighted Moving Average, Simple Exponential Smoothing, Holt-Winters ETS, SARIMA.
 
 Each model follows the same interface:
     fit(train: pd.Series) -> self
@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.holtwinters import ExponentialSmoothing as HWExponentialSmoothing
+from statsmodels.tsa.holtwinters import ExponentialSmoothing as HWExponentialSmoothing, SimpleExpSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 
@@ -41,6 +41,29 @@ class MovingAverage:
 
 
 class ExponentialSmoothing:
+    """Simple exponential smoothing: recent weeks weigh more, no trend and no seasonality."""
+
+    def __init__(self):
+        self._fitted = None
+
+    def fit(self, train: pd.Series) -> "ExponentialSmoothing":
+        model = SimpleExpSmoothing(train, initialization_method="estimated")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._fitted = model.fit(optimized=True)
+        return self
+
+    def predict(self, horizon: int) -> np.ndarray:
+        if self._fitted is None:
+            raise RuntimeError("Call fit() before predict().")
+        # Flat forecast: every future week gets the last smoothed level
+        return np.asarray(self._fitted.forecast(horizon))
+
+    def __repr__(self) -> str:
+        return "ExponentialSmoothing(simple)"
+
+
+class HoltWinters:
     """Holt-Winters triple exponential smoothing (additive trend + seasonality)."""
 
     def __init__(self, seasonal_periods: int = 52, trend: str = "add", seasonal: str = "add"):
@@ -50,7 +73,7 @@ class ExponentialSmoothing:
         self._fitted = None
         self.seasonal_fallback = False  # True when the last fit had < 2 seasonal cycles
 
-    def fit(self, train: pd.Series) -> "ExponentialSmoothing":
+    def fit(self, train: pd.Series) -> "HoltWinters":
         # Need at least 2 full seasonal cycles for additive seasonality
         sp = self.seasonal_periods
         self.seasonal_fallback = len(train) < 2 * sp
@@ -79,8 +102,8 @@ class ExponentialSmoothing:
 
     def __repr__(self) -> str:
         if self.seasonal_fallback:
-            return f"ExponentialSmoothing(no seasonality: needs {2 * self.seasonal_periods}+ training weeks)"
-        return f"ExponentialSmoothing(seasonal_periods={self.seasonal_periods})"
+            return f"Holt-Winters(no seasonality: needs {2 * self.seasonal_periods}+ training weeks)"
+        return f"Holt-Winters(seasonal_periods={self.seasonal_periods})"
 
 
 class SARIMAModel:

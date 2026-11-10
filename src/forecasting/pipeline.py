@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .metrics import compute_mape, compute_mae, compute_rmse, detect_deviations
-from .models import ExponentialSmoothing, MovingAverage, SARIMAModel
+from .models import ExponentialSmoothing, HoltWinters, MovingAverage, SARIMAModel
 
 
 @dataclass
@@ -70,7 +70,8 @@ class ForecastingPipeline:
         self.deviation_threshold_pct = deviation_threshold_pct
         self.models = models or [
             MovingAverage(window=12),
-            ExponentialSmoothing(seasonal_periods=52),
+            ExponentialSmoothing(),
+            HoltWinters(seasonal_periods=52),
             SARIMAModel(order=(1, 1, 1), seasonal_order=(1, 1, 1, 52)),
         ]
 

@@ -6,7 +6,7 @@
 >
 > **AI & LLM skills:** Claude API integration · prompt engineering · structured (JSON) LLM output · natural language → optimisation constraints · LLM-assisted schema detection · model routing (Haiku / Sonnet) · AI-generated documentation · secure API-key handling
 >
-> **Supply chain & data skills:** demand forecasting (Holt-Winters, SARIMA, moving average) · forecast accuracy (MAPE / MAE / RMSE) · workforce & capacity planning · linear / mixed-integer programming (PuLP) · sensitivity & scenario analysis · service-level vs. cost trade-offs · data cleaning & PII removal · pandas · Streamlit / Plotly dashboards · 3D data visualisation (Three.js / WebGL)
+> **Supply chain & data skills:** demand forecasting (Holt-Winters, SARIMA, exponential smoothing, moving average) · forecast accuracy (MAPE / MAE / RMSE) · workforce & capacity planning · linear / mixed-integer programming (PuLP) · sensitivity & scenario analysis · service-level vs. cost trade-offs · data cleaning & PII removal · pandas · Streamlit / Plotly dashboards · 3D data visualisation (Three.js / WebGL)
 
 ![Workforce optimisation tab of the dashboard](docs/images/optimisation.jpg)
 
@@ -19,7 +19,7 @@ Operations teams have to answer two questions before every busy season: *how muc
 ## What it does
 
 1. **Loads almost any sales file.** Upload a CSV or Excel export and the app works out which column is the date, the demand and the product — using rules first, and Claude (Haiku) when an API key is available. It also handles messy exports: different encodings, one-row-per-product layouts, order-level data (summed to weekly), and it drops personal data (emails, names, addresses) before anything else happens.
-2. **Forecasts demand.** Two models compete on a hold-out period (moving average and Holt-Winters); a third, SARIMA, can be switched on for strongly seasonal data. The most accurate one wins for each product.
+2. **Forecasts demand.** Three models compete on a hold-out period (moving average, simple exponential smoothing and Holt-Winters); a fourth, SARIMA, can be switched on for strongly seasonal data. The most accurate one wins for each product.
 3. **Plans the workforce.** An optimisation model finds the cheapest staffing plan that respects budget, headcount, ramp limits and a minimum service level. From the command line, constraints can also be written in plain language and parsed by Claude (`py run_optimization.py --llm`); in the dashboard they are set with sliders.
 4. **Stress-tests the plan.** It flags weeks where the forecast error leaves the plan short, and shows how cost and service level move if demand, budget or headcount change.
 5. **Explains it with AI.** Claude writes an executive summary, answers what-if questions (re-running the optimiser for real numbers) and invents edge-case scenarios that are then tested automatically.
@@ -29,17 +29,17 @@ Everything is available in an interactive Streamlit dashboard.
 
 ## Results
 
-All figures below come from the built-in **synthetic demo dataset** (3 SKUs, 156 weeks — three years — of weekly demand, last 13 weeks held out, which leaves the two full years that seasonal models need to learn the yearly cycle). Run `run_forecast.py`, `run_optimization.py` and `run_analysis.py` to reproduce them (the command-line scripts fit all three models, including SARIMA).
+All figures below come from the built-in **synthetic demo dataset** (3 SKUs, 156 weeks — three years — of weekly demand, last 13 weeks held out, which leaves the two full years that seasonal models need to learn the yearly cycle). Run `run_forecast.py`, `run_optimization.py` and `run_analysis.py` to reproduce them (the command-line scripts fit all four models, including SARIMA).
 
 **Forecast accuracy** (MAPE = average % error, lower is better):
 
-| SKU | Moving average | Holt-Winters | SARIMA | Winner |
-|---|---|---|---|---|
-| SKU-A | 11.9 % | **3.6 %** | 3.8 % | Holt-Winters |
-| SKU-B | 9.4 % | 5.2 % | **4.9 %** | SARIMA |
-| SKU-C | 35.7 % | **10.2 %** | 10.4 % | Holt-Winters |
+| SKU | Moving average | Exp. smoothing | Holt-Winters | SARIMA | Winner |
+|---|---|---|---|---|---|
+| SKU-A | 11.9 % | 8.6 % | **3.6 %** | 3.8 % | Holt-Winters |
+| SKU-B | 9.4 % | 7.1 % | 5.2 % | **4.9 %** | SARIMA |
+| SKU-C | 35.7 % | 22.1 % | **10.2 %** | 10.4 % | Holt-Winters |
 
-The seasonal models land close to the noise built into the data (about 4–6 % MAPE that no model can predict). The moving average cannot follow the yearly cycle, hence its much larger error. In the dashboard, where SARIMA is off by default, Holt-Winters wins on all three SKUs; a **Forecast model** selector in the sidebar lets you force any model to compare them.
+The seasonal models land close to the noise built into the data (about 4–6 % MAPE that no model can predict). The moving average and simple exponential smoothing cannot follow the trend or the yearly cycle (both forecast a flat line), hence their much larger error; exponential smoothing still beats the moving average because it adapts faster to recent weeks. In the dashboard, where SARIMA is off by default, Holt-Winters wins on all three SKUs; a **Forecast model** selector in the sidebar lets you force any model to compare them.
 
 **Staffing plan (SKU-A, 13 weeks):** 100 % service level for 166,500 EUR, versus 175,500 EUR for a flat-staffing plan (−9,000 EUR, −5.1 %). The optimiser matches the cost of a "reactive" plan that adjusts headcount to the forecast every week; its value is that it guarantees the constraints hold.
 
@@ -117,7 +117,7 @@ Each stage also runs on its own from the command line (`run_forecast.py`, `run_o
 >
 > **Compétences IA & LLM :** intégration de l'API Claude · prompt engineering · sorties structurées (JSON) · langage naturel → contraintes d'optimisation · détection de schéma assistée par LLM · routage de modèles (Haiku / Sonnet) · documentation générée par IA · gestion sécurisée des clés d'API
 >
-> **Compétences supply chain & data :** prévision de la demande (Holt-Winters, SARIMA, moyenne mobile) · mesure de précision (MAPE / MAE / RMSE) · planification des effectifs et de la capacité · programmation linéaire / en nombres entiers (PuLP) · analyse de sensibilité et de scénarios · arbitrage niveau de service / coût · nettoyage de données et suppression des données personnelles · pandas · tableaux de bord Streamlit / Plotly · visualisation de données en 3D (Three.js / WebGL)
+> **Compétences supply chain & data :** prévision de la demande (Holt-Winters, SARIMA, lissage exponentiel, moyenne mobile) · mesure de précision (MAPE / MAE / RMSE) · planification des effectifs et de la capacité · programmation linéaire / en nombres entiers (PuLP) · analyse de sensibilité et de scénarios · arbitrage niveau de service / coût · nettoyage de données et suppression des données personnelles · pandas · tableaux de bord Streamlit / Plotly · visualisation de données en 3D (Three.js / WebGL)
 
 ![Onglet d'optimisation des effectifs du dashboard](docs/images/optimisation.jpg)
 
@@ -130,7 +130,7 @@ Avant chaque haute saison, les équipes opérations doivent répondre à deux qu
 ### Ce que fait le projet
 
 1. **Charge presque n'importe quel fichier de ventes.** Vous importez un CSV ou Excel et l'application identifie la colonne date, la demande et le produit — par règles d'abord, puis avec Claude (Haiku) si une clé d'API est disponible. Elle gère aussi les exports imparfaits : encodages différents, une ligne par produit, données par commande (sommées par semaine), et elle retire les données personnelles (emails, noms, adresses) avant tout traitement.
-2. **Prévoit la demande.** Deux modèles s'affrontent sur une période de test (moyenne mobile et Holt-Winters) ; un troisième, SARIMA, peut être activé pour les données très saisonnières. Le plus précis est retenu pour chaque produit.
+2. **Prévoit la demande.** Trois modèles s'affrontent sur une période de test (moyenne mobile, lissage exponentiel simple et Holt-Winters) ; un quatrième, SARIMA, peut être activé pour les données très saisonnières. Le plus précis est retenu pour chaque produit.
 3. **Planifie les effectifs.** Un modèle d'optimisation trouve le plan le moins coûteux qui respecte le budget, le nombre maximal de personnes, les limites de variation hebdomadaire et un niveau de service minimal. En ligne de commande, les contraintes peuvent aussi être écrites en langage naturel et interprétées par Claude (`py run_optimization.py --llm`) ; dans le dashboard, elles se règlent avec des curseurs.
 4. **Teste la solidité du plan.** Il repère les semaines où l'erreur de prévision laisse le plan en manque, et montre comment le coût et le niveau de service évoluent si la demande, le budget ou les effectifs changent.
 5. **Explique avec l'IA.** Claude rédige une synthèse, répond aux questions « et si… » (en relançant l'optimisation pour donner de vrais chiffres) et imagine des scénarios limites qui sont ensuite testés automatiquement.
@@ -140,17 +140,17 @@ Le tout est accessible dans un tableau de bord Streamlit interactif.
 
 ### Résultats
 
-Tous les chiffres ci-dessous proviennent du **jeu de démonstration synthétique** intégré (3 SKU, 156 semaines — trois ans — de demande hebdomadaire, 13 dernières semaines mises de côté pour le test, ce qui laisse les deux années complètes dont les modèles saisonniers ont besoin pour apprendre le cycle annuel). Lancez `run_forecast.py`, `run_optimization.py` et `run_analysis.py` pour les reproduire (les scripts en ligne de commande ajustent les trois modèles, SARIMA compris).
+Tous les chiffres ci-dessous proviennent du **jeu de démonstration synthétique** intégré (3 SKU, 156 semaines — trois ans — de demande hebdomadaire, 13 dernières semaines mises de côté pour le test, ce qui laisse les deux années complètes dont les modèles saisonniers ont besoin pour apprendre le cycle annuel). Lancez `run_forecast.py`, `run_optimization.py` et `run_analysis.py` pour les reproduire (les scripts en ligne de commande ajustent les quatre modèles, SARIMA compris).
 
 **Précision de la prévision** (MAPE = erreur moyenne en %, plus bas = mieux) :
 
-| SKU | Moyenne mobile | Holt-Winters | SARIMA | Gagnant |
-|---|---|---|---|---|
-| SKU-A | 11,9 % | **3,6 %** | 3,8 % | Holt-Winters |
-| SKU-B | 9,4 % | 5,2 % | **4,9 %** | SARIMA |
-| SKU-C | 35,7 % | **10,2 %** | 10,4 % | Holt-Winters |
+| SKU | Moyenne mobile | Lissage exp. | Holt-Winters | SARIMA | Gagnant |
+|---|---|---|---|---|---|
+| SKU-A | 11,9 % | 8,6 % | **3,6 %** | 3,8 % | Holt-Winters |
+| SKU-B | 9,4 % | 7,1 % | 5,2 % | **4,9 %** | SARIMA |
+| SKU-C | 35,7 % | 22,1 % | **10,2 %** | 10,4 % | Holt-Winters |
 
-Les modèles saisonniers s'approchent du bruit intégré aux données (environ 4 à 6 % de MAPE qu'aucun modèle ne peut prédire). La moyenne mobile ne peut pas suivre le cycle annuel, d'où son erreur bien plus forte. Dans le dashboard, où SARIMA est désactivé par défaut, Holt-Winters l'emporte sur les trois SKU ; un sélecteur **Forecast model** dans la barre latérale permet d'imposer un modèle pour les comparer.
+Les modèles saisonniers s'approchent du bruit intégré aux données (environ 4 à 6 % de MAPE qu'aucun modèle ne peut prédire). La moyenne mobile et le lissage exponentiel simple ne peuvent suivre ni la tendance ni le cycle annuel (tous deux prévoient une ligne plate), d'où leur erreur bien plus forte ; le lissage exponentiel bat tout de même la moyenne mobile car il s'adapte plus vite aux dernières semaines. Dans le dashboard, où SARIMA est désactivé par défaut, Holt-Winters l'emporte sur les trois SKU ; un sélecteur **Forecast model** dans la barre latérale permet d'imposer un modèle pour les comparer.
 
 **Plan d'effectifs (SKU-A, 13 semaines) :** 100 % de niveau de service pour 166 500 EUR, contre 175 500 EUR pour un effectif constant (−9 000 EUR, −5,1 %). L'optimiseur égale le coût d'un plan « réactif » qui ajuste les effectifs à la prévision chaque semaine ; son intérêt est de garantir le respect des contraintes.
 
