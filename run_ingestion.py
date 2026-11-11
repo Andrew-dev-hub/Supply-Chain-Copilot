@@ -14,8 +14,11 @@ import sys
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
+import truststore
 
 load_dotenv()
+# Trust the OS certificate store, so HTTPS works behind antivirus or corporate TLS inspection.
+truststore.inject_into_ssl()
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.ingestion.pipeline import IngestionPipeline

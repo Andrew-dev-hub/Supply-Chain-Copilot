@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+import truststore
 
 # Cap numeric-library threads before numpy is imported: on a shared host every core a
 # model fit grabs counts against the app's CPU budget (Streamlit Cloud throttles heavy apps).
@@ -16,6 +17,8 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_var, "2")
 
 load_dotenv()
+# Trust the OS certificate store, so HTTPS works behind antivirus or corporate TLS inspection.
+truststore.inject_into_ssl()
 sys.path.insert(0, str(Path(__file__).parent))
 
 import os
