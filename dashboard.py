@@ -291,7 +291,21 @@ with st.sidebar:
     st.divider()
     st.subheader("Workforce Constraints")
 
-    capacity = st.number_input("Capacity / worker / week (units)", 10, 500, 50, step=5)
+    # The default ranges fit a peak of ~1,000 units/week. For bigger series, scale the
+    # capacity range by a power of 10 so ~20 workers still cover the peak; headcount and
+    # budget then stay in their usual ranges.
+    recent = df_active.loc[df_active["sku"] == sku].sort_values("date")["demand"].tail(test_weeks)
+    peak = float(recent.max()) if len(recent) else 0.0
+    unit_scale = 10 ** max(0, int(np.ceil(np.log10(peak / 1_000)))) if peak > 1_000 else 1
+    cap_default = 50
+    if unit_scale > 1:  # a round 1/2/5 x 10^n so ~10 workers cover the peak
+        mag = 10 ** int(np.floor(np.log10(peak / 10)))
+        cap_default = max(10 * unit_scale, max(m * mag for m in (1, 2, 5) if m * mag <= peak / 10))
+    capacity = st.number_input("Capacity / worker / week (units)", 10 * unit_scale, 500 * unit_scale,
+                               cap_default, step=5 * unit_scale)
+    if unit_scale > 1:
+        st.caption(f"Capacity range scaled ×{unit_scale:,} to match this series "
+                   f"(peak {peak:,.0f} units/week).")
     cost_pw = st.number_input("Cost / worker / week (EUR)", 100, 5000, 900, step=50)
     max_w = st.slider("Max workers available", 5, 50, 20)
     budget = st.number_input("Total budget (EUR)", 50_000, 1_000_000, 175_000, step=5_000)
