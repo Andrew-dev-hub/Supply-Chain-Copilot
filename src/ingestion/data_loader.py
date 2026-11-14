@@ -87,6 +87,17 @@ def _read_raw(uploaded_file) -> pd.DataFrame:
     return _drop_pii(df)
 
 
+_ACCOUNTING_NEG = re.compile(r"^\((.*)\)$")
+
+
+def parse_quantity(col: pd.Series) -> pd.Series:
+    """Numbers stored as text, including accounting negatives: '(100)' -> -100 (a return)."""
+    if pd.api.types.is_numeric_dtype(col):
+        return col
+    text = col.astype(str).str.strip().str.replace(_ACCOUNTING_NEG, r"-\1", regex=True)
+    return pd.to_numeric(text, errors="coerce")
+
+
 def _needs_weekly_aggregation(out: pd.DataFrame) -> bool:
     keys = ["date", "sku"] if "sku" in out.columns else ["date"]
     if out.duplicated(keys).any():
@@ -98,8 +109,9 @@ def _needs_weekly_aggregation(out: pd.DataFrame) -> bool:
 def _to_weekly(out: pd.DataFrame) -> pd.DataFrame:
     """
     Sum transactions into Monday-start weeks (per sku), filling empty weeks with 0.
-    Drops the partial first/last week and any trailing weeks below 50% of the
-    median weekly total (an export cut-off, not a real demand collapse).
+    Drops the partial first/last week and any leading or trailing weeks below 50%
+    of the median weekly total (a ramp-up or export cut-off, not real demand).
+    Net weekly demand is floored at 0 when returns outweigh orders.
     """
     lo, hi = out["date"].min().normalize(), out["date"].max().normalize()
     sku = out["sku"] if "sku" in out.columns else "ALL"
@@ -107,7 +119,8 @@ def _to_weekly(out: pd.DataFrame) -> pd.DataFrame:
     wk = (out.assign(week=week, sku=sku)
              .groupby(["sku", "week"])["demand"].sum()
              .unstack("sku", fill_value=0)
-             .asfreq("W-MON", fill_value=0))
+             .asfreq("W-MON", fill_value=0)
+             .clip(lower=0))
 
     wk = wk[(wk.index >= lo) & (wk.index + pd.Timedelta(days=6) <= hi)]  # full weeks only
     total = wk.sum(axis=1)
@@ -115,6 +128,8 @@ def _to_weekly(out: pd.DataFrame) -> pd.DataFrame:
         floor = 0.5 * total.median()
         while len(total) > 8 and total.iloc[-1] < floor:
             total = total.iloc[:-1]
+        while len(total) > 8 and total.iloc[0] < floor:
+            total = total.iloc[1:]
         wk = wk.loc[total.index]
 
     long = wk.stack().rename("demand").reset_index()
@@ -132,7 +147,7 @@ def apply_mapping(df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
     """
     out = pd.DataFrame()
     out["date"]   = pd.to_datetime(df[mapping.date_col], errors="coerce")
-    out["demand"] = pd.to_numeric(df[mapping.demand_col], errors="coerce")
+    out["demand"] = parse_quantity(df[mapping.demand_col])
 
     if mapping.sku_col:
         out["sku"] = df[mapping.sku_col].astype(str)

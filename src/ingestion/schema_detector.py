@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import warnings as _warnings
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -79,7 +80,10 @@ def detect_schema_rules(df: pd.DataFrame) -> ColumnMapping:
                 continue  # numbers would "parse" as epoch timestamps
             try:
                 sample = df[c].dropna().iloc[:20]
-                if len(sample) and pd.to_datetime(sample, errors="coerce").notna().mean() > 0.9:
+                with _warnings.catch_warnings():  # "could not infer format" on every text column
+                    _warnings.simplefilter("ignore", UserWarning)
+                    parsed = pd.to_datetime(sample, errors="coerce")
+                if len(sample) and parsed.notna().mean() > 0.9:
                     parseable.append(c)
             except Exception:
                 pass
@@ -121,7 +125,11 @@ def detect_schema_rules(df: pd.DataFrame) -> ColumnMapping:
     cat_cols = [c for c in remaining
                 if not pd.api.types.is_numeric_dtype(df[c])
                 and not pd.api.types.is_datetime64_any_dtype(df[c])]
-    scored_cat = sorted(cat_cols, key=lambda c: _score(c, _SKU_KEYWORDS), reverse=True)
+    # Keyword match first; among ties, a plannable grain (<= 200 groups, e.g. 33 categories)
+    # beats a raw product code with thousands of sparse series.
+    scored_cat = sorted(cat_cols, key=lambda c: (_score(c, _SKU_KEYWORDS) > 0,
+                                                 2 <= df[c].nunique() <= 200,
+                                                 _score(c, _SKU_KEYWORDS)), reverse=True)
 
     # Integer identifiers (item=1..50, store=1..10): named like a SKU, few distinct values
     id_cols = [c for c in remaining

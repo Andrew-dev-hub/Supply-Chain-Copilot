@@ -13,6 +13,7 @@ venv/
 DataCoSupplyChainDataset.csv
 train.csv
 Sales_Transactions_Dataset_Weekly.csv
+Historical Product Demand.csv
 data/ingested_demand_data.csv
 
 # Outputs (large generated files)
