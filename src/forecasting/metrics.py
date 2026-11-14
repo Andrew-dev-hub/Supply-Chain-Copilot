@@ -13,6 +13,16 @@ def compute_mape(actual: np.ndarray, forecast: np.ndarray) -> float:
     return float(np.mean(np.abs((actual[mask] - forecast[mask]) / actual[mask])) * 100)
 
 
+def compute_wape(actual: np.ndarray, forecast: np.ndarray) -> float:
+    """Weighted Absolute Percentage Error: total absolute error / total actual demand.
+    Each week weighs by its volume, so a near-empty week cannot blow up the score."""
+    actual, forecast = np.asarray(actual, float), np.asarray(forecast, float)
+    total = np.abs(actual).sum()
+    if total == 0:
+        return float("nan")
+    return float(np.abs(actual - forecast).sum() / total * 100)
+
+
 def compute_mae(actual: np.ndarray, forecast: np.ndarray) -> float:
     return float(np.mean(np.abs(np.asarray(actual, float) - np.asarray(forecast, float))))
 

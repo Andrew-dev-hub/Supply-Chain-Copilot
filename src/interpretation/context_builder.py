@@ -27,7 +27,7 @@ def build_context(
         f"SKU: {fc_result.sku}",
         f"Model: {fc_result.model_name}",
         f"Test period: {fc_result.test_dates[0].date()} to {fc_result.test_dates[-1].date()} ({len(fc_result.test_dates)} weeks)",
-        f"MAPE: {fc_result.mape:.2f}%  |  MAE: {fc_result.mae:.1f}  |  RMSE: {fc_result.rmse:.1f}",
+        f"MAPE: {fc_result.mape:.2f}%  |  WAPE: {fc_result.wape:.2f}%  |  MAE: {fc_result.mae:.1f}  |  RMSE: {fc_result.rmse:.1f}",
         f"Total forecasted demand (test horizon): {fc_result.forecast.sum():,.0f} units",
         f"Significant forecast deviations (>20%): {len(fc_result.deviations)}",
         "",

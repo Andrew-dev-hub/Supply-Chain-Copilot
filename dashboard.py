@@ -370,13 +370,17 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 with tab1:
     st.header(f"Demand Forecast — {sku}")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     metric_card(c1, "Model", fc.model_name.split("(")[0])
     metric_card(c2, "MAPE", f"{fc.mape:.2f}%")
-    metric_card(c3, "MAE", f"{fc.mae:.1f} units")
-    metric_card(c4, "Significant deviations", str(len(fc.deviations)))
-    st.caption("MAPE by model on the test horizon: " + " · ".join(
-        f"{r.model_name.split('(')[0]} {r.mape:.2f}%" for r in sorted(fc_results, key=lambda r: r.mape)
+    c3.metric("WAPE", f"{fc.wape:.2f}%",
+              help="Total absolute error / total actual demand. Unlike MAPE, a low-volume "
+                   "week cannot inflate it, so it is the fairer score on lumpy real data.")
+    metric_card(c4, "MAE", f"{fc.mae:.1f} units")
+    metric_card(c5, "Significant deviations", str(len(fc.deviations)))
+    st.caption("MAPE / WAPE by model on the test horizon: " + " · ".join(
+        f"{r.model_name.split('(')[0]} {r.mape:.2f}% / {r.wape:.2f}%"
+        for r in sorted(fc_results, key=lambda r: r.mape)
     ))
     if "no seasonality" in fc.model_name:
         st.warning(
@@ -568,7 +572,7 @@ with tab3:
     st.header(f"Deviation & Sensitivity — {sku}")
 
     c1, c2, c3, c4 = st.columns(4)
-    metric_card(c1, "Forecast MAPE", f"{dev.forecast_mape:.2f}%")
+    metric_card(c1, "Forecast MAPE / WAPE", f"{dev.forecast_mape:.1f}% / {dev.forecast_wape:.1f}%")
     metric_card(c2, "Plan service level", f"{dev.plan_service_level:.1%}")
     metric_card(c3, "At-risk weeks", str(dev.weeks_at_risk))
     metric_card(c4, "Max coverage gap", f"{dev.max_coverage_gap:.0f} units")

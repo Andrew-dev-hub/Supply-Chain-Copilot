@@ -27,12 +27,14 @@ class DeviationReport:
     weeks_at_risk: int          # plan capacity < actual demand (if actuals known)
     max_coverage_gap: float     # worst-case units uncovered by plan
     forecast_mape: float
+    forecast_wape: float
     plan_service_level: float
 
     def summary(self) -> str:
         lines = [
             f"SKU: {self.sku}",
             f"Forecast MAPE            : {self.forecast_mape:.2f}%",
+            f"Forecast WAPE            : {self.forecast_wape:.2f}%",
             f"Plan service level       : {self.plan_service_level:.1%}",
             f"Weeks where plan < actual: {self.weeks_at_risk}",
             f"Max coverage gap         : {self.max_coverage_gap:,.0f} units",
@@ -87,5 +89,6 @@ def build_deviation_report(
         weeks_at_risk=int((plan_gap > 0).sum()),
         max_coverage_gap=float(plan_gap.max()),
         forecast_mape=forecast_result.mape,
+        forecast_wape=forecast_result.wape,
         plan_service_level=alloc_result.service_level,
     )

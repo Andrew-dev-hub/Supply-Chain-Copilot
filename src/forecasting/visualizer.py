@@ -72,7 +72,7 @@ def plot_forecast(
     ax2.grid(axis="y", linestyle=":", alpha=0.5)
     ax2.legend(fontsize=8, loc="upper right")
 
-    metrics_text = f"MAPE={result.mape:.1f}%  MAE={result.mae:.0f}  RMSE={result.rmse:.0f}"
+    metrics_text = f"MAPE={result.mape:.1f}%  WAPE={result.wape:.1f}%  MAE={result.mae:.0f}  RMSE={result.rmse:.0f}"
     fig.text(0.99, 0.01, metrics_text, ha="right", fontsize=9, color="#555")
 
     plt.tight_layout()

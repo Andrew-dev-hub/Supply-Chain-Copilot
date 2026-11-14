@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from .metrics import compute_mape, compute_mae, compute_rmse, detect_deviations
+from .metrics import compute_mape, compute_wape, compute_mae, compute_rmse, detect_deviations
 from .models import ExponentialSmoothing, HoltWinters, MovingAverage, SARIMAModel
 
 
@@ -24,6 +24,7 @@ class ForecastResult:
     actual: np.ndarray
     forecast: np.ndarray
     mape: float
+    wape: float
     mae: float
     rmse: float
     deviations: pd.DataFrame
@@ -35,6 +36,7 @@ class ForecastResult:
             f"Test period: {self.test_dates[0].date()} to {self.test_dates[-1].date()} "
             f"({len(self.test_dates)} weeks)",
             f"MAPE  : {self.mape:.2f}%",
+            f"WAPE  : {self.wape:.2f}%",
             f"MAE   : {self.mae:.1f}",
             f"RMSE  : {self.rmse:.1f}",
             f"Significant deviations (>{self._threshold}%): {len(self.deviations)}",
@@ -120,6 +122,7 @@ class ForecastingPipeline:
                     actual = test.values
 
                     mape = compute_mape(actual, forecast)
+                    wape = compute_wape(actual, forecast)
                     mae = compute_mae(actual, forecast)
                     rmse = compute_rmse(actual, forecast)
                     deviations = detect_deviations(
@@ -137,13 +140,14 @@ class ForecastingPipeline:
                         actual=actual,
                         forecast=forecast,
                         mape=mape,
+                        wape=wape,
                         mae=mae,
                         rmse=rmse,
                         deviations=deviations,
                     )
                     result._threshold = self.deviation_threshold_pct
                     sku_results.append(result)
-                    print(f"  [{sku}] {repr(model):60s}  MAPE={mape:.2f}%")
+                    print(f"  [{sku}] {repr(model):60s}  MAPE={mape:.2f}%  WAPE={wape:.2f}%")
 
                 except Exception as exc:
                     print(f"  [{sku}] {repr(model)} FAILED: {exc}")
